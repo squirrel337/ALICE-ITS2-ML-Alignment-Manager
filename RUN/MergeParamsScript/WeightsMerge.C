@@ -222,6 +222,7 @@ Bool_t LoadWeights(Option_t * filename, Network NetworkWeight, bool extended = t
       return kFALSE;
    }
    if (input.peek() == std::ifstream::traits_type::eof()) {
+      delete[] buff;
       return kFALSE; //empty
    }
    
@@ -488,18 +489,38 @@ void WeightsMerge(int seed = 1){
 
    while (input) {
       input >> filename ;
-      std::cout<<"#"<<nSOURCEFILES<<" "<<filename<<std::endl;
-      if(filename!="") fSOURCEFILE.push_back(filename);
-      TString getIndex = filename;
-      getIndex.ReplaceAll("weights_n","");
-      getIndex.ReplaceAll(".txt","");
-      int weights_index = getIndex.Atoi();
-      fSOURCEINDEX.push_back(weights_index);
+      // The last pass through this loop is the one that hits end of file and
+      // leaves filename empty. Everything below must stay inside the guard:
+      // an empty name reduces to index 0 and would mark patch 0 present even
+      // when worker 0 produced nothing.
+      if(filename!=""){
+         std::cout<<"#"<<nSOURCEFILES<<" "<<filename<<std::endl;
+         fSOURCEFILE.push_back(filename);
+         TString getIndex = filename;
+         getIndex.ReplaceAll("weights_n","");
+         getIndex.ReplaceAll(".txt","");
+         if(getIndex.IsDigit()){
+            int weights_index = getIndex.Atoi();
+            if(weights_index >= 0 && weights_index < nPARALLEL){
+               fSOURCEINDEX.push_back(weights_index);
+            } else {
+               Error("WeightsMerge()","patch index %d from '%s' is outside 0..%d; ignored",
+                     weights_index, filename.Data(), nPARALLEL-1);
+            }
+         } else {
+            Error("WeightsMerge()","'%s' is not weights_nNNN.txt; ignored", filename.Data());
+         }
+         nSOURCEFILES++;
+      }
       filename="";
-      nSOURCEFILES++;
       if(nSOURCEFILES>=nPARALLEL) break;
    }
    delete[] buff;
+
+   if(nSOURCEFILES==0){
+      Error("WeightsMerge()","weights_step%d/ holds no weights_nNNN.txt; nothing to merge", seed);
+      return;
+   }
 
    // patch information
    bool PATCHLIST[nPARALLEL];
@@ -527,9 +548,19 @@ void WeightsMerge(int seed = 1){
          if(PATCHLIST[p]==false) continue;
          std::cerr<<" Patch "<<p<<" Selected"<<std::endl;
          Network mNetwork(p);
-         LoadWeights(Form("weights_step%d/weights_n%03d.txt",seed,p),mNetwork,true);
+         if(!LoadWeights(Form("weights_step%d/weights_n%03d.txt",seed,p),mNetwork,true)){
+            // Pushing it anyway would merge an all-zero weight set and divide
+            // by a count that includes it.
+            Error("WeightsMerge()","patch %d could not be read; it is left out of the merge", p);
+            continue;
+         }
          NetworkWeights.push_back(mNetwork);
       }
+      if(NetworkWeights.size()==0){
+         Error("WeightsMerge()","no patch could be read; refusing to write a merged file");
+         return;
+      }
+      std::cerr<<"Merging "<<NetworkWeights.size()<<" patch(es)"<<std::endl;
       MergeWeights(seed);
       DumpWeights(Form("weights_merge_step%d.txt",seed),BaseNetworkWeight);
       NetworkWeights.clear();

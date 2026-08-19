@@ -73,7 +73,8 @@ say "unpacking the module into ${N_WORKERS} worker directories"
 for (( ns = 0; ns < N_WORKERS; ns++ )); do
   worker="${alignworker}/align_worker_${ns}"
   mkdir -p "$worker" || die "could not create $worker"
-  if [ ! -d "$worker/$modulename" ]; then
+  if [ ! -d "$worker/$modulename" ] || [ "$AC_MODULE_TGZ" -nt "$worker/$modulename" ]; then
+    rm -rf "$worker/$modulename"
     cp "$AC_MODULE_TGZ" "$worker/${modulename}.tgz" || die "could not copy the module archive"
     ( cd "$worker" && tar -zxf "${modulename}.tgz" ) || die "could not unpack the module in $worker"
   fi
@@ -93,14 +94,23 @@ for (( bcnt = 1; bcnt <= N_BATCHES; bcnt++ )); do
   end_step=$(( BASE_STEP + bcnt * STEPS_PER_BATCH ))
 
   say "=== batch ${bcnt}/${N_BATCHES}: steps ${start_step}..${end_step} from ${input_step} ==="
+  # Emptied, not just created: an archive left by an earlier attempt at this
+  # batch would otherwise be unpacked and merged as if it were from this one.
+  rm -rf "${resultcontainer}/result_step_${bcnt}"
   mkdir -p "${resultcontainer}/result_step_${bcnt}"
 
   # ---- stage 1: data preparation ----
   say "[1/4] preparing data"
   cd "$AC_MASTER_DIR" || die "cannot enter $AC_MASTER_DIR"
 
+  # Anything left here by an aborted run belongs to that run, not this one.
+  rm -f "alignment-input-data_${bcnt}.root" "MasterData_${bcnt}.lst"
+  rm -rf "step${bcnt}"
+
   root -l -b -q "DataRandomMerge.C(${bcnt},${DATA_MERGE_MAX_FILES})" \
        &> "alignment-input-data-merge.log.${bcnt}" || die "DataRandomMerge failed (batch ${bcnt})"
+  [ -s "alignment-input-data_${bcnt}.root" ] \
+    || die "batch ${bcnt}: the merge produced no alignment-input-data_${bcnt}.root (see alignment-input-data-merge.log.${bcnt})"
 
   root -l -b -q "DataSplit.C(${bcnt},${N_WORKERS},${BATCH_ID})" \
        &> "alignment-input-data-split.log.${bcnt}" || die "DataSplit failed (batch ${bcnt})"
@@ -163,6 +173,9 @@ for (( bcnt = 1; bcnt <= N_BATCHES; bcnt++ )); do
 
   # ---- stage 3: merge ----
   say "[3/4] merging worker weights"
+  # WeightsMerge.C merges whatever this directory contains, so a file left by a
+  # previous run -- or by a run with more workers -- would be averaged in.
+  rm -rf "${AC_MERGE_DIR}/weights_step${bcnt}"
   mkdir -p "${AC_MERGE_DIR}/weights_step${bcnt}"
 
   found=0

@@ -30,7 +30,7 @@ void splitData(TTree* tree, EventData* s_eventdata, o2::its::GeometryTGeo* gm, i
 
    nSPLITINDEX       = new int [nsplit];
 
-   gSystem->Exec(Form("mkdir step%d",seed));
+   gSystem->Exec(Form("mkdir -p step%d",seed));
    for(int s=0; s<nsplit; s++){
       fileOut_DataInput[s] = new TFile(Form("step%d/alignment-input-data-split%d.root",seed,s),"recreate");
       hNClusterByTrack[s]  = new TH1D("hNClusterByTrack","NClueters / Track;N_{Cluster};N_{Track}",10,0,10);
@@ -162,7 +162,21 @@ void DataSplit(int seed = 1, int nsplit = 10, int bid = 0){
 
    std::clog<<"DataSplit STEP 2"<<std::endl;
    TFile* fInput = TFile::Open(inputfile.data());
-   TTree* treeInput = (TTree*)gDirectory->Get("DataInput");
+   if (!fInput || fInput->IsZombie()) {
+      Error("DataSplit()","cannot open %s -- did the merge stage run?",inputfile.data());
+      gSystem->Exit(1);
+   }
+   // Ask the file, not gDirectory: on a failed open gDirectory is whatever was
+   // current and Get() would return a tree from somewhere else entirely.
+   TTree* treeInput = (TTree*)fInput->Get("DataInput");
+   if (!treeInput) {
+      Error("DataSplit()","%s holds no DataInput tree",inputfile.data());
+      gSystem->Exit(1);
+   }
+   if (treeInput->GetEntries() <= 0) {
+      Error("DataSplit()","%s holds an empty DataInput tree",inputfile.data());
+      gSystem->Exit(1);
+   }
 
    std::clog<<"DataSplit STEP 3"<<std::endl;
    EventData* s_eventdata = nullptr;  

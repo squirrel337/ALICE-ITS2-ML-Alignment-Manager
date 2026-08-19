@@ -29,7 +29,7 @@ TString dataSetDir = kDataSetDir;
 std::vector<TString> dataSet;
 TString masterDir="MasterData";
 
-void random(int seed, int maxSelection = 2){
+bool random(int seed, int maxSelection = 2){
 
    /*
    //dataSet.push_back("alignment-input-data_run00520296_1040.root");
@@ -77,6 +77,11 @@ void random(int seed, int maxSelection = 2){
 
    int nDATASETS = dataSet.size();
 
+   if (maxSelection <= 0 || maxSelection > nDATASETS) {
+      Error("random()","asked for %d of %d configured files",maxSelection,nDATASETS);
+      return false;
+   }
+
    //shuffle
    int* index_DATASET = new int[nDATASETS];
    for (int i = 0; i < nDATASETS; i++) {
@@ -84,9 +89,9 @@ void random(int seed, int maxSelection = 2){
    }
    TRandom3 datalst_rndm(seed);
    Int_t j, k;
-   Int_t a = nDATASETS - 1;
-   for (int i = 0; i < nDATASETS; i++) {
-      j = (Int_t) (datalst_rndm.Rndm() * a);
+   for (int i = nDATASETS - 1; i > 0; i--) {
+      j = (Int_t) (datalst_rndm.Rndm() * (i + 1));
+      if (j > i) j = i;                      // Rndm() is [0,1); belt and braces
       k = index_DATASET[j];
       index_DATASET[j] = index_DATASET[i];
       index_DATASET[i] = k;
@@ -97,21 +102,47 @@ void random(int seed, int maxSelection = 2){
       std::cout<<" "<<i<<" "<<dataSet[i]<<std::endl;
    };
    std::cout<<"LIST SHUFFLED"<<std::endl;
-   TString init_cmd = Form("rm *");
-   gSystem->Exec(Form("cd %s;%s",(const char*)masterDir,(const char*)init_cmd));
+   // `cd <dir>;rm *` runs the rm in the macro's own directory whenever the cd
+   // fails, which deletes the macros themselves. Make sure the directory is
+   // there and bind the two commands so that cannot happen.
+   gSystem->Exec(Form("mkdir -p %s",(const char*)masterDir));
+   if (gSystem->AccessPathName(masterDir, kWritePermission)) {
+      Error("random()","staging directory %s is missing or not writable",(const char*)masterDir);
+      return false;
+   }
+   gSystem->Exec(Form("cd %s && rm -f *",(const char*)masterDir));
+
+   int nmissing = 0;
    for (int i = 0; i < maxSelection; i++) {
-      //std::cout<<" "<<i<<" "<<dataSet[index_DATASET[i]]<<std::endl;
-      TString cmd = Form("ln -s %s/%s .",(const char*)dataSetDir,(const char*)dataSet[index_DATASET[i]]);
+      TString source = Form("%s/%s",(const char*)dataSetDir,(const char*)dataSet[index_DATASET[i]]);
+      // ln -s succeeds for a target that does not exist, ls lists the dangling
+      // link, and hadd then skips it with a message nobody reads -- the sample
+      // silently shrinks. Check before linking instead.
+      if (gSystem->AccessPathName(source, kReadPermission)) {
+         Error("random()","input file missing or unreadable: %s",(const char*)source);
+         nmissing++;
+         continue;
+      }
+      TString cmd = Form("ln -s %s .",(const char*)source);
       std::cout<<" "<<i<<" "<<dataSet[index_DATASET[i]]<<" "<<cmd<<std::endl;
-      gSystem->Exec(Form("cd %s;%s",(const char*)masterDir,(const char*)cmd));
+      gSystem->Exec(Form("cd %s && %s",(const char*)masterDir,(const char*)cmd));
    };
-   gSystem->Exec(Form("cd %s; ls -al",(const char*)masterDir));
+   gSystem->Exec(Form("cd %s && ls -al",(const char*)masterDir));
+
+   if (nmissing > 0) {
+      Error("random()","%d of %d selected input files are not available",nmissing,maxSelection);
+      return false;
+   }
+   return true;
 };
 
 void DataRandomMerge(int seed = 1, int nMAXfiles = 20){
 
    std::clog<<"DataRandomMerge STEP 0"<<std::endl;
-   random(seed,kFilesPerBatch);
+   if (!random(seed,kFilesPerBatch)) {
+      Error("DataRandomMerge()","input selection failed for batch %d; nothing merged",seed);
+      gSystem->Exit(1);           // so the caller's `|| die` actually fires
+   }
 
    std::clog<<"DataRandomMerge STEP 1"<<std::endl;
 
@@ -176,10 +207,28 @@ void DataRandomMerge(int seed = 1, int nMAXfiles = 20){
       SOURCEFILES += "MasterData/" + fSOURCEFILE[index[f]] + " ";
    }
  
+   if (nMAXfiles <= 0 || SOURCEFILES == "") {
+      Error("DataRandomMerge()","no input files staged for batch %d; nothing to merge",seed);
+      gSystem->Exit(1);
+   }
+
    std::cout<<"hadd merge START"<<std::endl;
    std::cout<<"TARGET : "<<TARGETFILE<<std::endl;
    std::cout<<"SOURCE : "<<SOURCEFILES<<std::endl;
 
-   gSystem->Exec(Form("hadd %s %s",(const char*)TARGETFILE, (const char*)SOURCEFILES));
+   // -f matters: without it hadd refuses to overwrite an existing target and
+   // exits, leaving a file from an earlier run in place. The status was also
+   // being discarded, so that failure reached the next stage as a silently
+   // stale input rather than as an error.
+   int rc = gSystem->Exec(Form("hadd -f %s %s",(const char*)TARGETFILE, (const char*)SOURCEFILES));
+   if (rc != 0) {
+      Error("DataRandomMerge()","hadd failed (rc=%d) writing %s",rc,(const char*)TARGETFILE);
+      gSystem->Exit(1);
+   }
+   if (gSystem->AccessPathName(TARGETFILE, kReadPermission)) {
+      Error("DataRandomMerge()","hadd reported success but %s is not there",(const char*)TARGETFILE);
+      gSystem->Exit(1);
+   }
+   std::cout<<"hadd merge DONE : "<<TARGETFILE<<std::endl;
    //storePlots("monitor");
 }
