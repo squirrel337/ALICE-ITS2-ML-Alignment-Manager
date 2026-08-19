@@ -1,0 +1,6 @@
+# Keep this directory tracked in git while ignoring everything placed in it
+# at runtime. Git cannot record an empty directory on its own -- it only
+# stores files -- so this placeholder is what makes the directory exist
+# after a fresh clone.
+*
+!.gitignore
