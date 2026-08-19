@@ -68,6 +68,19 @@ ac_load() {
 
   # shellcheck disable=SC1090
   . "$f" || { ac_die "failed to source $f"; return 1; }
+
+  # ac_derive does arithmetic on several of these. Under `set -u` a missing key
+  # would abort the shell there with a bare "unbound variable" instead of a
+  # message naming the file and the key, so check they are all present first.
+  local k missing=""
+  for k in $(ac_keys); do
+    eval "[ \"\${$k+set}\" = set ]" || missing="$missing $k"
+  done
+  if [ -n "$missing" ]; then
+    ac_die "$f does not define:$missing"
+    return 1
+  fi
+
   AC_CONF_LOADED=1
   ac_derive
 }
@@ -357,7 +370,11 @@ ac_set() {
   fi
 
   tmp=$(mktemp "${TMPDIR:-/tmp}/alignconf.XXXXXX") || return 1
-  awk -v key="$key" -v val="$val" '
+  # The value goes through the environment, not -v: awk applies escape-sequence
+  # processing to a -v assignment, so a value containing \t or \\ would arrive
+  # changed.
+  AC_SET_VALUE="$val" awk -v key="$key" '
+    BEGIN { val = ENVIRON["AC_SET_VALUE"] }
     skipping { if ($0 ~ /"/) skipping = 0; next }
     index($0, key "=") == 1 {
       line = $0

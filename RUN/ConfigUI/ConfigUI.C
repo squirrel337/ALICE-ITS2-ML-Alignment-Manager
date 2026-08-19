@@ -119,16 +119,20 @@ public:
 
 TString AlignConfigUI::Quote(const TString &s)
 {
-   // Single-quote for the shell. A value containing a single quote is
-   // rejected rather than escaped, because none of these settings should
-   // ever need one.
-   if (s.Contains("'")) return TString("");
-   return TString("'") + s + "'";
+   // POSIX single-quote escaping: close the quote, add an escaped quote,
+   // reopen. There is no failure mode, so no caller has to test for one.
+   TString out = "'";
+   for (Ssiz_t i = 0; i < s.Length(); ++i) {
+      if (s[i] == '\'') out += "'\\''";
+      else                out += s[i];
+   }
+   out += "'";
+   return out;
 }
 
 TString AlignConfigUI::Run(const char *args)
 {
-   TString cmd = TString::Format("%s %s 2>&1", fCtl.Data(), args);
+   TString cmd = Quote(fCtl) + " " + args + " 2>&1";
    return gSystem->GetFromPipe(cmd);
 }
 
@@ -474,6 +478,7 @@ void AlignConfigUI::Rescan()
 
    TString selected = TString(" ") + Get("DATA_FILES") + " ";
    selected.ReplaceAll("\n", " ");
+   selected.ReplaceAll("\t", " ");
 
    TString pat = fPattern->GetText();
    if (pat.IsNull()) pat = "*";
@@ -489,12 +494,16 @@ void AlignConfigUI::Rescan()
       while ((f = (TSystemFile *)next())) {
          if (f->IsDirectory()) continue;
          TString name = f->GetName();
+         Bool_t on = selected.Contains(TString(" ") + name + " ");
          Ssiz_t len = 0;
-         if (name.Index(re, &len) != 0 || len != name.Length()) continue;
+         Bool_t matches = (name.Index(re, &len) == 0 && len == name.Length());
+         // Show anything the pattern matches, and anything already configured
+         // even if it does not. Save reads the tree, so a configured file left
+         // out of the list here would be dropped from the configuration.
+         if (!matches && !on) continue;
 
          TGListTreeItem *item = fFileTree->AddItem(0, name);
          fFileTree->SetCheckBox(item, kTRUE);
-         Bool_t on = selected.Contains(TString(" ") + name + " ");
          fFileTree->CheckItem(item, on);
          if (on) ticked++;
          shown++;
@@ -502,7 +511,19 @@ void AlignConfigUI::Rescan()
       files->Delete();
       delete files;
    }
-   fFileCount->SetText(TString::Format("%d file(s) match, %d selected", shown, ticked));
+   Int_t configured = 0;
+   {
+      TObjArray *names = selected.Tokenize(" ");
+      configured = names->GetEntries();
+      delete names;
+   }
+   if (configured > ticked) {
+      fFileCount->SetText(TString::Format(
+         "%d listed, %d selected -- %d configured file(s) are NOT in this directory "
+         "and saving will drop them", shown, ticked, configured - ticked));
+   } else {
+      fFileCount->SetText(TString::Format("%d file(s) listed, %d selected", shown, ticked));
+   }
    fFileCountRow->Layout();
    fClient->NeedRedraw(fFileTree);
 }
@@ -562,6 +583,13 @@ void AlignConfigUI::OnSave()
       moduleName.ReplaceAll("   (archive not found)", "");
    }
 
+   if (moduleName.IsNull()) {
+      new TGMsgBox(gClient->GetRoot(), this, "No module",
+                   "Pick a module archive on the Module tab before saving.",
+                   kMBIconExclamation, kMBOk);
+      return;
+   }
+
    TString args = "set";
    args += " DATA_INPUT_DIR=" + Quote(fDataDir->GetText());
    args += " DATA_FILE_PATTERN=" + Quote(fPattern->GetText());
@@ -583,15 +611,6 @@ void AlignConfigUI::OnSave()
    args += " MASTER_DATA_SCRIPT_DIR=" + Quote(fMasterDir->GetText());
    args += TString::Format(" WORKER_LAUNCH_STAGGER=%lld", (Long64_t)fStagger->GetIntNumber());
    args += " RUN_TAG=" + Quote(fRunTag->GetText());
-
-   if (args.Contains("=''") && moduleName.IsNull()) {
-      Log("module name is empty -- pick an archive on the Module tab");
-      return;
-   }
-   if (args.Contains(" =")) {          // Quote() returned empty: a value had a quote
-      Log("a value contains a single quote, which is not supported; remove it and retry");
-      return;
-   }
 
    LogCommand("save", Run(args));
    LogCommand("generate", Run("generate"));
