@@ -1,0 +1,1589 @@
+<title>ITS2 Alignment Manager</title>
+
+<style>
+:root {
+  --ground:      #F1F4F6;
+  --surface:     #FFFFFF;
+  --surface-2:   #E7ECF0;
+  --ink:         #121A21;
+  --ink-2:       #4B5A67;
+  --ink-3:       #77848F;
+  --rule:        #D4DBE2;
+  --rule-strong: #AFBBC6;
+  --accent:      #0D6B77;
+  --accent-soft: #D9EDEF;
+  --signal:      #9C5605;
+  --signal-soft: #F6E8D4;
+  --reject:      #962A39;
+  --reject-soft: #F4DCDF;
+
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, "Bitstream Charter", Georgia, serif;
+  --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0E1317;
+    --surface:     #161C21;
+    --surface-2:   #1D252B;
+    --ink:         #E2E8ED;
+    --ink-2:       #A2AFBA;
+    --ink-3:       #7B8894;
+    --rule:        #273038;
+    --rule-strong: #3C4852;
+    --accent:      #4EBDCA;
+    --accent-soft: #10333A;
+    --signal:      #DFA24C;
+    --signal-soft: #33270F;
+    --reject:      #E8808F;
+    --reject-soft: #391B21;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0E1317;
+  --surface:     #161C21;
+  --surface-2:   #1D252B;
+  --ink:         #E2E8ED;
+  --ink-2:       #A2AFBA;
+  --ink-3:       #7B8894;
+  --rule:        #273038;
+  --rule-strong: #3C4852;
+  --accent:      #4EBDCA;
+  --accent-soft: #10333A;
+  --signal:      #DFA24C;
+  --signal-soft: #33270F;
+  --reject:      #E8808F;
+  --reject-soft: #391B21;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+  padding: 0 clamp(1rem, 4vw, 3rem) 6rem;
+}
+
+.page {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+/* ---------- masthead ---------- */
+
+.masthead {
+  padding: clamp(2.5rem, 6vw, 4.5rem) 0 2rem;
+  border-bottom: 2px solid var(--ink);
+}
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 1.1rem;
+}
+.masthead h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(2.1rem, 5.2vw, 3.3rem);
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+  margin: 0 0 1rem;
+  max-width: 18ch;
+}
+.standfirst {
+  font-size: clamp(1.02rem, 1.6vw, 1.18rem);
+  color: var(--ink-2);
+  max-width: 62ch;
+  margin: 0 0 2rem;
+}
+.meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+.meta div { background: var(--ground); padding: 0.7rem 0.85rem; }
+.meta dt {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 0 0.28rem;
+}
+.meta dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.79rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- layout ---------- */
+
+.shell {
+  display: block;
+  padding-top: 2.5rem;
+}
+@media (min-width: 1080px) {
+  .shell {
+    display: grid;
+    grid-template-columns: 210px minmax(0, 1fr);
+    gap: 3.5rem;
+    align-items: start;
+  }
+  .rail { position: sticky; top: 1.5rem; }
+}
+
+.rail ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--rule);
+}
+.rail li { margin: 0; }
+.rail a {
+  display: block;
+  padding: 0.42rem 0 0.42rem 0.9rem;
+  margin-left: -1px;
+  border-left: 2px solid transparent;
+  color: var(--ink-2);
+  text-decoration: none;
+  font-size: 0.83rem;
+  line-height: 1.35;
+}
+.rail a:hover, .rail a:focus-visible {
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+.rail .num {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--ink-3);
+  margin-right: 0.45rem;
+}
+.rail .rail-title {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 0 0 0.7rem 0.9rem;
+  margin: 0;
+}
+
+main { min-width: 0; }
+
+/* ---------- sections ---------- */
+
+section { margin: 0 0 4rem; scroll-margin-top: 1.5rem; }
+
+h2 {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 2.6vw, 1.95rem);
+  font-weight: 600;
+  line-height: 1.16;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  margin: 0 0 0.4rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--rule-strong);
+}
+h2 .stage {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 400;
+  margin-bottom: 0.5rem;
+}
+h3 {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  margin: 2.1rem 0 0.6rem;
+}
+h4 {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 400;
+  margin: 1.6rem 0 0.5rem;
+}
+p { margin: 0 0 1rem; max-width: 68ch; }
+ul, ol.body-list { max-width: 68ch; padding-left: 1.15rem; margin: 0 0 1rem; }
+li { margin-bottom: 0.42rem; }
+a { color: var(--accent); }
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.855em;
+  background: var(--surface-2);
+  padding: 0.08em 0.34em;
+  border-radius: 2px;
+  overflow-wrap: anywhere;
+}
+strong { font-weight: 650; }
+em { font-style: italic; color: var(--ink); }
+
+.lede {
+  font-size: 1.06rem;
+  color: var(--ink-2);
+  max-width: 64ch;
+  margin-bottom: 1.6rem;
+}
+
+/* ---------- callouts ---------- */
+
+.note {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 0.85rem 1.1rem;
+  margin: 1.5rem 0;
+  max-width: 68ch;
+  font-size: 0.92rem;
+}
+.note p:last-child { margin-bottom: 0; }
+.note .tag {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.35rem;
+}
+.note.caveat { border-left-color: var(--signal); background: var(--signal-soft); }
+.note.caveat .tag { color: var(--signal); }
+
+/* ---------- key numbers ---------- */
+
+.numbers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  margin: 1.8rem 0 2rem;
+}
+.numbers div { background: var(--surface); padding: 0.9rem 1rem; }
+.numbers .n {
+  font-family: var(--font-mono);
+  font-size: 1.32rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  display: block;
+  line-height: 1.2;
+}
+.numbers .k {
+  font-size: 0.76rem;
+  color: var(--ink-3);
+  display: block;
+  margin-top: 0.25rem;
+  line-height: 1.35;
+}
+
+/* ---------- figures ---------- */
+
+.fig { margin: 2rem 0 2.4rem; display: flex; flex-direction: column; gap: 0.8rem; }
+.fig-frame {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 1.2rem;
+}
+.fig svg { display: block; width: 100%; height: auto; color: var(--ink); }
+.fig figcaption {
+  font-size: 0.84rem;
+  color: var(--ink-2);
+  max-width: 74ch;
+  line-height: 1.55;
+}
+.fig figcaption b {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 400;
+  margin-right: 0.5rem;
+}
+
+/* svg primitives */
+.d-box   { fill: var(--surface);  stroke: var(--rule-strong); stroke-width: 1.3; }
+.d-fill  { fill: var(--surface-2); stroke: var(--rule-strong); stroke-width: 1.3; }
+.d-ext   { fill: none; stroke: var(--rule-strong); stroke-width: 1.3; stroke-dasharray: 5 4; }
+.d-acc   { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; }
+.d-sig   { fill: var(--signal-soft); stroke: var(--signal); stroke-width: 1.6; }
+.d-rejb  { fill: var(--reject-soft); stroke: var(--reject); stroke-width: 1.3; }
+.d-nest  { fill: none; stroke: var(--rule-strong); stroke-width: 1.2; }
+
+.d-t     { fill: var(--ink); font-family: var(--font-body); font-size: 13px; }
+.d-t.b   { font-weight: 650; }
+.d-t.sm  { font-size: 11.5px; fill: var(--ink-2); }
+.d-m     { fill: var(--ink-2); font-family: var(--font-mono); font-size: 11px; }
+.d-m.hi  { fill: var(--accent); }
+.d-cap   { fill: var(--ink-3); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; }
+.d-rt    { fill: var(--reject); font-family: var(--font-mono); font-size: 11px; }
+.d-at    { fill: var(--accent); font-family: var(--font-mono); font-size: 11px; }
+.d-st    { fill: var(--signal); font-family: var(--font-mono); font-size: 11px; }
+
+.d-l     { fill: none; stroke: var(--rule-strong); stroke-width: 1.4; }
+.d-la    { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+.d-lr    { fill: none; stroke: var(--reject); stroke-width: 1.3; stroke-dasharray: 4 3; }
+.d-ls    { fill: none; stroke: var(--signal); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.d-tick  { fill: none; stroke: var(--rule-strong); stroke-width: 1; }
+
+.h-grey  { fill: var(--rule-strong); }
+.h-acc   { fill: var(--accent); }
+.h-rej   { fill: var(--reject); }
+.h-sig   { fill: var(--signal); }
+
+.d-node  { fill: var(--surface); stroke: var(--ink-2); stroke-width: 1.4; }
+.d-node-o{ fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; }
+
+/* ---------- tables ---------- */
+
+.table-wrap { overflow-x: auto; margin: 1.4rem 0 1.8rem; border: 1px solid var(--rule); }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 560px;
+  background: var(--surface);
+  font-size: 0.855rem;
+}
+th, td {
+  text-align: left;
+  padding: 0.52rem 0.85rem;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+thead th {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 400;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--rule-strong);
+}
+tbody tr:last-child td { border-bottom: none; }
+td.mono, th.mono { font-family: var(--font-mono); font-size: 0.79rem; font-variant-numeric: tabular-nums; }
+td.val { font-family: var(--font-mono); font-size: 0.79rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---------- file tree ---------- */
+
+pre.tree {
+  font-family: var(--font-mono);
+  font-size: 0.775rem;
+  line-height: 1.62;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 1.1rem 1.2rem;
+  overflow-x: auto;
+  margin: 1.4rem 0 1.8rem;
+  color: var(--ink-2);
+}
+pre.tree b { color: var(--ink); font-weight: 650; }
+pre.tree i { color: var(--ink-3); font-style: normal; }
+
+/* ---------- footer ---------- */
+
+footer {
+  border-top: 2px solid var(--ink);
+  padding-top: 1.5rem;
+  margin-top: 1rem;
+  font-size: 0.83rem;
+  color: var(--ink-3);
+  max-width: 70ch;
+}
+footer p { max-width: none; }
+
+a:focus-visible, .rail a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+<style>
+/* ---------- manager-specific additions ---------- */
+
+.pipe {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  margin: 1.8rem 0 2rem;
+}
+.pipe div { background: var(--surface); padding: 0.9rem 1rem; }
+.pipe .s {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.pipe .h { font-weight: 650; display: block; margin-bottom: 0.3rem; }
+.pipe .d { font-size: 0.82rem; color: var(--ink-2); display: block; line-height: 1.5; }
+
+pre.sh {
+  font-family: var(--font-mono);
+  font-size: 0.775rem;
+  line-height: 1.6;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule-strong);
+  padding: 1rem 1.2rem;
+  overflow-x: auto;
+  margin: 1.3rem 0 1.7rem;
+  color: var(--ink-2);
+}
+pre.sh b { color: var(--ink); font-weight: 650; }
+pre.sh i { color: var(--ink-3); font-style: normal; }
+pre.sh u { color: var(--accent); text-decoration: none; }
+
+.gap {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--signal);
+  background: var(--surface);
+  padding: 0.9rem 1.1rem;
+  margin: 1.2rem 0;
+  max-width: 74ch;
+}
+.gap:last-of-type { margin-bottom: 0; }
+.gap .where {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--signal);
+  display: block;
+  margin-bottom: 0.35rem;
+  overflow-wrap: anywhere;
+}
+.gap p { margin: 0; font-size: 0.9rem; max-width: none; }
+.gap p + p { margin-top: 0.5rem; }
+</style>
+<div class="page">
+
+<header class="masthead">
+  <p class="eyebrow">ALICE ITS2 &middot; Alignment orchestration &middot; Manager</p>
+  <h1>ITS2 Alignment Manager</h1>
+  <p class="standfirst">
+    How the manager turns a directory of reconstructed track files into aligned sensor
+    parameters: how one batch is shuffled and split across parallel workers, how each worker runs
+    an unmodified copy of the alignment module, how the per-worker network weights are averaged
+    back into a single parameter set, and how that set becomes the starting point of the next
+    batch.
+  </p>
+  <dl class="meta">
+    <div><dt>Repository</dt><dd>ALICE-ITS2-ML-Alignment-Manager</dd></div>
+    <div><dt>Entry point</dt><dd>runAll_alignment_example.sh &lt;TAG&gt;</dd></div>
+    <div><dt>Implementation</dt><dd>bash + ROOT macros (C++ interpreted)</dd></div>
+    <div><dt>Training module</dt><dd>delivered as MODULE/&lt;name&gt;.tgz</dd></div>
+    <div><dt>Parallel workers</dt><dd>nsplit = 8 per batch</dd></div>
+    <div><dt>Batches</dt><dd>10, one alignment step each</dd></div>
+    <div><dt>Step range</dt><dd>901 &rarr; 910 (BASESTEP 900)</dd></div>
+    <div><dt>Merge strategy</dt><dd>unweighted mean over workers</dd></div>
+  </dl>
+</header>
+
+<div class="shell">
+
+  <nav class="rail" aria-label="Sections">
+    <p class="rail-title">Contents</p>
+    <ol>
+      <li><a href="#orientation"><span class="num">00</span>What the manager is</a></li>
+      <li><a href="#repos"><span class="num">01</span>Three repositories</a></li>
+      <li><a href="#loop"><span class="num">02</span>One batch, end to end</a></li>
+      <li><a href="#dirs"><span class="num">03</span>Working directories</a></li>
+      <li><a href="#prep"><span class="num">04</span>Stage 1 &mdash; data preparation</a></li>
+      <li><a href="#fanout"><span class="num">05</span>Stage 2 &mdash; parallel training</a></li>
+      <li><a href="#merge"><span class="num">06</span>Stage 3 &mdash; weight merge</a></li>
+      <li><a href="#handoff"><span class="num">07</span>Stage 3-1 &mdash; parameter handoff</a></li>
+      <li><a href="#chain"><span class="num">08</span>Step numbering</a></li>
+      <li><a href="#remote"><span class="num">09</span>The distributed variant</a></li>
+      <li><a href="#config"><span class="num">10</span>Configuration reference</a></li>
+      <li><a href="#gaps"><span class="num">11</span>Gaps in the checked-in tree</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+<!-- ==================== 00 ==================== -->
+<section id="orientation">
+  <h2><span class="stage">Section 00</span>What the manager is</h2>
+
+  <p class="lede">
+    The alignment module trains one small network per silicon sensor against a track-fit residual.
+    It reads one input file and writes one archive. The manager is everything around that: it
+    decides which data the module sees, runs many copies of it at once, and reconciles their
+    answers into a single alignment.
+  </p>
+
+  <p>
+    The division of labour is worth stating precisely, because it is what makes the module
+    replaceable. The module knows nothing about parallelism. It opens <code>./XXXXinput.root</code>,
+    reads the previous step's weights from <code>./MLPTrain_Step&lt;n-1&gt;/</code>, trains, and
+    writes <code>MLPTrain_Step&lt;n&gt;.tgz</code>. Every copy of it runs that same sequence in its
+    own directory, unaware that seven siblings are doing the same thing on different slices of the
+    same batch.
+  </p>
+
+  <p>
+    The manager supplies the context. It merges and shuffles the raw track files, splits the merged
+    events into <code>nsplit</code> statistically independent slices, gives each worker a slice and
+    an identical copy of the previous alignment, waits for all of them, averages the resulting
+    per-sensor weights, and packs the average into the archive the next batch will start from. The
+    module is therefore delivered as a frozen tarball &mdash; <code>MODULE/&lt;modulename&gt;.tgz</code>
+    &mdash; and never edited in place.
+  </p>
+
+  <div class="note">
+    <span class="tag">Scope</span>
+    <p>
+      This document covers the orchestration layer only. For what happens <em>inside</em> one
+      worker &mdash; the cost function, the vertex constraint, how network weights become six
+      rigid-body parameters per sensor &mdash; see <code>docs/workflow.html</code> in
+      ALICE-ITS2-ML-Alignment-2024 and ALICE-ITS2-ML-Alignment-2025, the two source trees that
+      are packed into that tarball.
+    </p>
+  </div>
+</section>
+
+<!-- ==================== 01 ==================== -->
+<section id="repos">
+  <h2><span class="stage">Section 01</span>Three repositories</h2>
+
+  <p>
+    The project is split across three repositories with a one-way dependency: the manager consumes
+    the source trees, never the reverse.
+  </p>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>Repository</th><th>Holds</th><th>Reaches the run as</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="mono">&hellip;-Manager</td>
+        <td>Batch driver, data-prep macros, weight-merge macro, remote-training client</td>
+        <td>Checked out and run directly</td>
+      </tr>
+      <tr>
+        <td class="mono">&hellip;-2024</td>
+        <td>Alignment module, fixed-vertex generation</td>
+        <td class="mono">MODULE/&lt;name&gt;.tgz</td>
+      </tr>
+      <tr>
+        <td class="mono">&hellip;-2025</td>
+        <td>Alignment module, self-estimated vertex generation</td>
+        <td class="mono">MODULE/&lt;name&gt;.tgz</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    Which of the two source trees is in play is decided by one string in the driver, and nothing
+    else in the manager depends on that choice:
+  </p>
+
+<pre class="sh"><i>runAll_alignment_example.sh:38-39</i>
+modulename=<b>"v20250627-a_vtx.useAPR.hitCluster.useDCA.ver4_core.v20251024"</b>
+modulename=<b>"v20250627+a_vtx.useAPR.hitCluster.useDCA.ver4_core.v20251024"</b>   <u>&larr; this one wins</u></pre>
+
+  <p>
+    The two lines differ by one character, <code>-a_vtx</code> against <code>+a_vtx</code>, which
+    is the 2024/2025 distinction: a vertex taken from the reconstruction against a vertex the
+    module re-estimates from the ITS tracks themselves. The second assignment overwrites the first,
+    so the run uses <code>+a_vtx</code>. Because the archive name is the only link between the
+    manager and a particular source tree, keeping the two commented alternatives side by side is
+    how the switch is recorded &mdash; but only the last line has any effect.
+  </p>
+
+  <div class="note caveat">
+    <span class="tag">Reproducibility</span>
+    <p>
+      The tarball name is the whole provenance record. Nothing in the manager pins the source
+      repository to a commit, so an archive rebuilt from a moved branch keeps its name while its
+      contents change. Tagging the source trees with the same version string that appears in
+      <code>modulename</code> is what makes a past run reconstructible.
+    </p>
+  </div>
+</section>
+
+<!-- ==================== 02 ==================== -->
+<section id="loop">
+  <h2><span class="stage">Section 02</span>One batch, end to end</h2>
+
+  <p class="lede">
+    <code>runAll_alignment_example.sh</code> takes a single argument, a run tag, and executes ten
+    batches in sequence. Every batch performs the same four stages and advances the alignment by
+    one step.
+  </p>
+
+<pre class="sh">./runAll_alignment_example.sh <b>&lt;TAG&gt;</b>          <i># TAG names this run; all output is filed under it</i></pre>
+
+  <div class="pipe">
+    <div>
+      <span class="s">Stage 1</span>
+      <span class="h">Data preparation</span>
+      <span class="d">Shuffle the available track files, merge a random selection, split the merged
+      events into <code>nsplit</code> slices.</span>
+    </div>
+    <div>
+      <span class="s">Stage 2</span>
+      <span class="h">Parallel training</span>
+      <span class="d">Launch <code>nsplit</code> module copies in the background, one per slice,
+      each starting from the same previous alignment.</span>
+    </div>
+    <div>
+      <span class="s">Stage 3</span>
+      <span class="h">Weight merge</span>
+      <span class="d">Collect the last epoch's weights from every worker and average them per
+      sensor into one parameter set.</span>
+    </div>
+    <div>
+      <span class="s">Stage 3-1</span>
+      <span class="h">Parameter handoff</span>
+      <span class="d">Repack the merged weights into the archive the next batch consumes as its
+      starting alignment.</span>
+    </div>
+  </div>
+
+  <figure class="fig">
+    <div class="fig-frame">
+      <svg viewBox="0 0 920 372" role="img" aria-labelledby="fig1t">
+        <title id="fig1t">Data flow through the four stages of one batch, and the loop back into the next batch</title>
+
+        <!-- feed boxes -->
+        <rect class="d-fill" x="20"  y="28" width="210" height="34" rx="2"/>
+        <rect class="d-fill" x="255" y="28" width="200" height="34" rx="2"/>
+        <rect class="d-fill" x="490" y="28" width="200" height="34" rx="2"/>
+
+        <text class="d-m" x="32"  y="42">dataSetDir</text>
+        <text class="d-cap" x="32" y="55">EXTERNAL STORAGE</text>
+        <text class="d-m" x="267" y="42">MODULE/&lt;modulename&gt;.tgz</text>
+        <text class="d-cap" x="267" y="55">FROZEN SOURCE TREE</text>
+        <text class="d-m" x="502" y="42">PARAMS/…/Step&lt;in&gt;.tgz</text>
+        <text class="d-cap" x="502" y="55">PREVIOUS ALIGNMENT</text>
+
+        <!-- feed arrows -->
+        <path class="d-l" d="M125 62 L125 118" marker-end="url(#a1)"/>
+        <path class="d-l" d="M355 62 L355 118" marker-end="url(#a1)"/>
+        <path class="d-l" d="M590 62 L590 90 L390 90 L390 118" marker-end="url(#a1)"/>
+
+        <!-- stages -->
+        <rect class="d-box" x="20"  y="120" width="210" height="52" rx="2"/>
+        <rect class="d-box" x="255" y="120" width="200" height="52" rx="2"/>
+        <rect class="d-acc" x="490" y="120" width="170" height="52" rx="2"/>
+        <rect class="d-box" x="690" y="120" width="190" height="52" rx="2"/>
+
+        <text class="d-cap" x="34"  y="140">STAGE 1</text>
+        <text class="d-t b" x="34"  y="158">Data preparation</text>
+        <text class="d-cap" x="269" y="140">STAGE 2</text>
+        <text class="d-t b" x="269" y="158">Parallel training</text>
+        <text class="d-cap" x="504" y="140">STAGE 3</text>
+        <text class="d-t b" x="504" y="158">Weight merge</text>
+        <text class="d-cap" x="704" y="140">STAGE 3-1</text>
+        <text class="d-t b" x="704" y="158">Parameter handoff</text>
+
+        <!-- stage-to-stage -->
+        <path class="d-l" d="M230 146 L255 146" marker-end="url(#a1)"/>
+        <path class="d-l" d="M455 146 L490 146" marker-end="url(#a1)"/>
+        <path class="d-l" d="M660 146 L690 146" marker-end="url(#a1)"/>
+
+        <!-- outputs -->
+        <text class="d-cap" x="20"  y="200">WRITES</text>
+        <text class="d-m" x="20"  y="218">step&lt;b&gt;/…-split0.root</text>
+        <text class="d-m" x="20"  y="234">   ⋮</text>
+        <text class="d-m" x="20"  y="250">step&lt;b&gt;/…-split7.root</text>
+
+        <text class="d-cap" x="255" y="200">WRITES</text>
+        <text class="d-m" x="255" y="218">Step&lt;n&gt;-aw0.tgz</text>
+        <text class="d-m" x="255" y="234">   ⋮</text>
+        <text class="d-m" x="255" y="250">Step&lt;n&gt;-aw7.tgz</text>
+        <text class="d-cap" x="255" y="268">&rarr; RESULT/&lt;TAG&gt;/result_step_&lt;b&gt;/</text>
+
+        <text class="d-cap" x="490" y="200">WRITES</text>
+        <text class="d-m" x="490" y="218">weights_merge_step&lt;b&gt;.txt</text>
+        <text class="d-m" x="490" y="234">Monitor_MergeWeights…root</text>
+
+        <text class="d-cap" x="690" y="200">WRITES</text>
+        <text class="d-m hi" x="690" y="218">PARAMS/&lt;TAG&gt;/</text>
+        <text class="d-m hi" x="690" y="234">  MLPTrain_Step&lt;n&gt;.tgz</text>
+
+        <!-- loop back -->
+        <path class="d-la" d="M880 146 L900 146 L900 330 L355 330 L355 176" marker-end="url(#a2)"/>
+        <text class="d-at" x="370" y="324">next batch reads it as Step&lt;in&gt; — alignment advances one step</text>
+
+        <!-- batch frame -->
+        <rect class="d-ext" x="8" y="108" width="904" height="240" rx="3"/>
+        <text class="d-cap" x="12" y="102">FOR bcnt = 1 … 10</text>
+
+        <defs>
+          <marker id="a1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0 0 L8 4 L0 8 z" class="h-grey"/>
+          </marker>
+          <marker id="a2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0 0 L8 4 L0 8 z" class="h-acc"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+    <figcaption>
+      <b>Figure 1</b> One batch. The three inputs at the top are external to the manager's own
+      output: the raw track files live on storage the driver only points at, the module arrives as
+      a frozen tarball, and the previous alignment arrives as an archive. The accented return path
+      is the only state that carries between batches &mdash; each batch's merged parameters become
+      the next batch's starting point, which is what makes ten independent-looking batches a single
+      ten-step alignment.
+    </figcaption>
+  </figure>
+
+  <div class="numbers">
+    <div><span class="n">10</span><span class="k">batches per run</span></div>
+    <div><span class="n">8</span><span class="k">workers per batch (nsplit)</span></div>
+    <div><span class="n">80</span><span class="k">module executions per run</span></div>
+    <div><span class="n">5</span><span class="k">epochs per worker (nEPOCH)</span></div>
+    <div><span class="n">50 000</span><span class="k">events per worker (nDATA)</span></div>
+    <div><span class="n">24 120</span><span class="k">sensors carried per weight set</span></div>
+  </div>
+</section>
+
+<!-- ==================== 03 ==================== -->
+<section id="dirs">
+  <h2><span class="stage">Section 03</span>Working directories</h2>
+
+  <p>
+    Four directories under the checkout carry all run state. The driver resolves them once, near
+    the top, and every later path is derived from those four variables plus the run tag.
+  </p>
+
+<pre class="sh"><i>runAll_alignment_example.sh:29-41</i>
+homedir=$PWD
+aligndir=<b>"${homedir}/ALIGN"</b>          alignworker=<b>"${aligndir}/${TAG}"</b>
+paramsdir=<b>"${homedir}/PARAMS"</b>
+moduledir=<b>"${homedir}/MODULE"</b>
+resultdir=<b>"${homedir}/RESULT"</b>        resultcontainer=<b>"${resultdir}/${TAG}"</b></pre>
+
+  <p>
+    Because every path is tag-scoped below the top level, two runs with different tags coexist
+    without colliding &mdash; but they share <code>MODULE/</code> and the reference archive in
+    <code>PARAMS/</code>, which are read-only during a run.
+  </p>
+
+<pre class="tree">.
+├── <b>ALIGN/</b>                                 <i>per-run scratch: workers and prepared data</i>
+│   └── &lt;TAG&gt;/
+│       ├── align_worker_0/ … align_worker_7/
+│       │   └── &lt;modulename&gt;/             <i>one unpacked module per worker</i>
+│       └── step&lt;b&gt;/                      <i>split inputs, merge logs, merged weights</i>
+├── <b>MODULE/</b>                                <i>frozen source trees, one tgz per version</i>
+│   └── &lt;modulename&gt;.tgz
+├── <b>PARAMS/</b>                                <i>alignment parameter archives</i>
+│   ├── MLPTrain_Step900.tgz              <i>reference seed, tracked in git</i>
+│   └── &lt;TAG&gt;/
+│       └── MLPTrain_Step901.tgz …        <i>one per completed batch</i>
+├── <b>RESULT/</b>                                <i>per-worker training output, kept</i>
+│   └── &lt;TAG&gt;/
+│       └── result_step_&lt;b&gt;/
+├── RUN/
+│   ├── MasterDataScript.0/               <i>DataRandomMerge.C, DataSplit.C</i>
+│   ├── MergeParamsScript/                <i>WeightsMerge.C, YDetectorGeometry</i>
+│   └── TrainScript/                      <i>remote-training client (Section 09)</i>
+├── runAll_alignment_example.sh
+└── run_dir_maker.sh</pre>
+
+  <p>
+    The four directories are tracked in git so that a fresh clone is already runnable, each holding
+    a <code>.gitignore</code> that keeps the directory itself while excluding the archives, ROOT
+    files and logs that land in it during a run. <code>run_dir_maker.sh</code> creates the same set
+    with <code>mkdir -p</code> and remains correct for a workspace assembled outside a clone.
+  </p>
+
+  <div class="note caveat">
+    <span class="tag">Disk</span>
+    <p>
+      Nothing in the driver removes intermediate data. Each batch keeps its split inputs under
+      <code>ALIGN/&lt;TAG&gt;/step&lt;b&gt;/</code>, every worker's archive and its unpacked copy
+      under <code>RESULT/&lt;TAG&gt;/result_step_&lt;b&gt;/</code>, and a further copy of each
+      worker's tree in <code>align_worker_&lt;ns&gt;/buffer_step&lt;b&gt;/</code>. A full ten-batch
+      run therefore holds ten batches of split ROOT files and eighty worker archives at once.
+    </p>
+  </div>
+</section>
+
+<!-- ==================== 04 ==================== -->
+<section id="prep">
+  <h2><span class="stage">Section 04</span>Stage 1 &mdash; data preparation</h2>
+
+  <p class="lede">
+    Two ROOT macros run back to back. The first builds one merged file from a random selection of
+    the available runs; the second scatters its events into the slices the workers will train on.
+  </p>
+
+  <h3>DataRandomMerge.C &mdash; select and merge</h3>
+
+  <p>
+    The macro holds an explicit list of input files &mdash; the current list is ten
+    <code>run00539884</code> files with DCA information &mdash; and a directory on external storage
+    where they live. It shuffles the list with <code>TRandom3</code> seeded by the batch number,
+    symlinks the first few into <code>MasterData/</code>, and <code>hadd</code>s them into one file.
+  </p>
+
+<pre class="sh"><i>runAll_alignment_example.sh:69 → RUN/MasterDataScript/DataRandomMerge.C</i>
+root -l -b -q DataRandomMerge.C"(<b>$bcnt</b>,20)"
+
+  random(seed=$bcnt, maxSelection=<b>5</b>)   <i># shuffle, symlink 5 files into MasterData/</i>
+  ls MasterData &gt; MasterData_$bcnt.lst
+  hadd alignment-input-data_$bcnt.root MasterData/…</pre>
+
+  <p>
+    The second argument, <code>nMAXfiles = 20</code>, caps the merge; the selection is capped
+    earlier and harder by the <code>maxSelection = 5</code> hard-coded in the call to
+    <code>random()</code>, so five files are merged regardless. Both shuffles are seeded by the
+    batch number, which makes the whole selection reproducible: batch 3 of one run sees exactly the
+    files batch 3 of any other run sees.
+  </p>
+
+  <h3>DataSplit.C &mdash; scatter into slices</h3>
+
+  <p>
+    The split is per event and uniform. For each event in the merged tree the macro draws
+    <code>splitIndex = rseed.Uniform(0, nsplit)</code> and copies the whole event &mdash; every
+    track, every cluster, the vertex fields &mdash; into that slice's output tree. Nothing is
+    duplicated across slices and nothing is selected out, so the slices are disjoint samples of the
+    same population.
+  </p>
+
+<pre class="sh"><i>RUN/MasterDataScript/DataSplit.C:151</i>
+DataSplit(seed=<b>$bcnt</b>, nsplit=<b>8</b>, bid=0)
+
+  o2::base::GeometryManager::loadGeometry()      <i># O2 geometry, L2G matrix cache</i>
+  for each event:
+      splitIndex = Uniform(0, nsplit)            <i># uniform, per event</i>
+      copy event → step$bcnt/alignment-input-data-split&lt;splitIndex&gt;.root</pre>
+
+  <p>
+    Each slice file also carries two monitoring histograms, <code>hNClusterByTrack</code> and
+    <code>hNTrackByEvent</code>, so the slice populations can be compared after the fact. The
+    macro loads the O2 geometry and fills the local-to-global matrix cache, which is what lets it
+    resolve a <code>ChipID</code> into layer, half-barrel, stave, half-stave and module.
+  </p>
+
+  <p>
+    The prepared batch, its two logs and the file list are then moved wholesale into the run's
+    worker area as <code>ALIGN/&lt;TAG&gt;/step&lt;b&gt;/</code>.
+  </p>
+</section>
+
+<!-- ==================== 05 ==================== -->
+<section id="fanout">
+  <h2><span class="stage">Section 05</span>Stage 2 &mdash; parallel training</h2>
+
+  <p class="lede">
+    The workers are ordinary background processes on one machine. Each owns a directory, a slice of
+    the batch, and its own unpacked copy of the module; none of them communicates with another.
+    Parallelism here is data parallelism with a single synchronization point at the end.
+  </p>
+
+  <figure class="fig">
+    <div class="fig-frame">
+      <svg viewBox="0 0 900 300" role="img" aria-labelledby="fig2t">
+        <title id="fig2t">One prepared batch fans out to eight independent workers and converges on the merge</title>
+
+        <rect class="d-fill" x="16" y="110" width="176" height="66" rx="2"/>
+        <text class="d-m" x="28" y="132">ALIGN/&lt;TAG&gt;/</text>
+        <text class="d-m" x="28" y="148">  step&lt;b&gt;/</text>
+        <text class="d-cap" x="28" y="166">8 DISJOINT SLICES</text>
+
+        <rect class="d-acc" x="656" y="110" width="228" height="66" rx="2"/>
+        <text class="d-t b" x="668" y="134">Stage 3 — merge</text>
+        <text class="d-cap" x="668" y="152">BARRIER: ALL WORKERS</text>
+        <text class="d-cap" x="668" y="166">MUST FINISH FIRST</text>
+
+        <text class="d-cap" x="200" y="14">SPLIT INPUT</text>
+        <text class="d-cap" x="470" y="14">PER-WORKER ARCHIVE</text>
+
+        <g class="d-node">
+          <rect x="300" y="22"  width="256" height="24" rx="2"/>
+          <rect x="300" y="52"  width="256" height="24" rx="2"/>
+          <rect x="300" y="82"  width="256" height="24" rx="2"/>
+          <rect x="300" y="112" width="256" height="24" rx="2"/>
+          <rect x="300" y="142" width="256" height="24" rx="2"/>
+          <rect x="300" y="172" width="256" height="24" rx="2"/>
+          <rect x="300" y="202" width="256" height="24" rx="2"/>
+          <rect x="300" y="232" width="256" height="24" rx="2"/>
+        </g>
+
+        <text class="d-m" x="312" y="38">align_worker_0 / &lt;modulename&gt;</text>
+        <text class="d-m" x="312" y="68">align_worker_1 / &lt;modulename&gt;</text>
+        <text class="d-m" x="312" y="98">align_worker_2 / &lt;modulename&gt;</text>
+        <text class="d-m" x="312" y="128">align_worker_3 / &lt;modulename&gt;</text>
+        <text class="d-m" x="312" y="158">align_worker_4 / &lt;modulename&gt;</text>
+        <text class="d-m" x="312" y="188">align_worker_5 / &lt;modulename&gt;</text>
+        <text class="d-m" x="312" y="218">align_worker_6 / &lt;modulename&gt;</text>
+        <text class="d-m" x="312" y="248">align_worker_7 / &lt;modulename&gt;</text>
+
+        <g class="d-l">
+          <path d="M192 143 C 245 143, 250 34,  296 34"/>
+          <path d="M192 143 C 245 143, 250 64,  296 64"/>
+          <path d="M192 143 C 245 143, 250 94,  296 94"/>
+          <path d="M192 143 C 245 143, 250 124, 296 124"/>
+          <path d="M192 143 C 245 143, 250 154, 296 154"/>
+          <path d="M192 143 C 245 143, 250 184, 296 184"/>
+          <path d="M192 143 C 245 143, 250 214, 296 214"/>
+          <path d="M192 143 C 245 143, 250 244, 296 244"/>
+        </g>
+
+        <g class="d-la">
+          <path d="M556 34  C 610 34,  605 143, 652 143"/>
+          <path d="M556 64  C 610 64,  605 143, 652 143"/>
+          <path d="M556 94  C 610 94,  605 143, 652 143"/>
+          <path d="M556 124 C 610 124, 605 143, 652 143"/>
+          <path d="M556 154 C 610 154, 605 143, 652 143"/>
+          <path d="M556 184 C 610 184, 605 143, 652 143"/>
+          <path d="M556 214 C 610 214, 605 143, 652 143"/>
+          <path d="M556 244 C 610 244, 605 143, 652 143"/>
+        </g>
+
+        <text class="d-cap" x="300" y="278">EACH WORKER ALSO RECEIVES AN IDENTICAL COPY OF THE PREVIOUS ALIGNMENT</text>
+      </svg>
+    </div>
+    <figcaption>
+      <b>Figure 2</b> Fan-out and barrier. The slices differ per worker; the starting alignment does
+      not. Every worker unpacks the same <code>MLPTrain_Step&lt;in&gt;.tgz</code>, so the eight
+      results differ only through the data they saw &mdash; which is precisely the property the
+      averaging in Stage 3 assumes.
+    </figcaption>
+  </figure>
+
+  <h3>What the driver does per worker</h3>
+
+  <p>
+    Before the batch loop begins, each worker directory is created once and the module tarball is
+    unpacked into it. Inside the loop the driver only has to attach the slice and the previous
+    alignment, then launch:
+  </p>
+
+<pre class="sh"><i>runAll_alignment_example.sh:93-116, per worker ns</i>
+cd ${alignworker}/align_worker_$ns/${modulename}
+
+rm -f XXXXinput.root
+ln -s ${alignworker}/step$bcnt/alignment-input-data-split${ns}.root <b>XXXXinput.root</b>
+
+<i># batch 1 seeds from the tracked reference; later batches from the previous batch's output</i>
+if [ $bcnt -eq 1 ] ; then
+  cp ${paramsdir}/MLPTrain_Step${input_step}.tgz .
+else
+  cp ${paramsdir}/${TAG}/MLPTrain_Step${input_step}.tgz .
+fi
+tar -zxvf MLPTrain_Step${input_step}.tgz
+
+./process_all_master.sh ${TAG} ${start_step} ${end_step} <b>&amp;</b>    <i># background</i>
+sleep 15s                                             <i># stagger, not a barrier</i></pre>
+
+  <p>
+    <code>XXXXinput.root</code> is the module's fixed input name; the symlink is the entire
+    interface for data. The <code>sleep 15s</code> between launches staggers process startup so
+    eight ROOT sessions do not open the geometry at the same instant &mdash; it is not a
+    synchronization primitive. The real barrier is the bare <code>wait</code> after the loop, which
+    blocks until all eight background jobs have exited.
+  </p>
+
+  <h3>Inside a worker</h3>
+
+  <p>
+    From here the manager is out of the picture. The module's own three-script chain takes over,
+    and the C preprocessor macros in <code>YMLPParallel.h</code> &mdash; not any manager variable
+    &mdash; decide the job size.
+  </p>
+
+<pre class="sh">process_all_master.sh &lt;TAG&gt; &lt;stepI&gt; &lt;stepF&gt;
+  └─ alienv load O2/latest                      <i># O2 environment</i>
+     process_all_train.sh
+       ├─ run_profile_beam.C                    <i># writes YMLPBeamProfile.h</i>
+       └─ for nStep in stepI..stepF:
+            <i># batch_train is regenerated per step, then sourced by ROOT</i>
+            .L ./Ymlp/src/YDetectorGeometry.cxx
+            .x run_train_circle.C(nStep)        <i># the training itself</i>
+            tar -zcvf MLPTrain_Step&lt;nStep&gt;.tgz MLPTrain_Step&lt;nStep&gt;</pre>
+
+  <div class="note">
+    <span class="tag">Where the knobs live</span>
+    <p>
+      <code>nDATA</code>, <code>nEPOCH</code>, <code>jparallel</code> and <code>nCORE</code> are
+      <code>#define</code>s compiled into the module at run time. Changing the number of events or
+      epochs means editing the source tree and rebuilding the tarball &mdash; the manager cannot
+      override them, and does not try to.
+    </p>
+  </div>
+
+  <h3>Collecting the results</h3>
+
+  <p>
+    Once the barrier clears, each worker's archive is renamed with its worker index and moved to
+    the run's result container, and the unpacked tree is set aside in a per-batch buffer:
+  </p>
+
+<pre class="sh"><i>runAll_alignment_example.sh:128-132</i>
+mv MLPTrain_Step${nStep}.tgz <b>MLPTrain_Step${nStep}-aw${ns}.tgz</b>
+mv MLPTrain_Step*.tgz ${resultcontainer}/result_step_${bcnt}/
+mkdir ../buffer_step$bcnt
+mv MLPTrain_Step* ../buffer_step$bcnt/</pre>
+
+  <p>
+    The <code>-aw&lt;ns&gt;</code> suffix is what carries worker identity forward; it is the only
+    label the merge stage has to work with.
+  </p>
+</section>
+
+<!-- ==================== 06 ==================== -->
+<section id="merge">
+  <h2><span class="stage">Section 06</span>Stage 3 &mdash; weight merge</h2>
+
+  <p class="lede">
+    Eight workers have produced eight opinions about where every sensor sits. The merge reduces
+    them to one by taking, for each sensor and each network weight, the unweighted arithmetic mean
+    across the workers that reported.
+  </p>
+
+  <h3>Gathering</h3>
+
+  <p>
+    The driver unpacks each worker's archive, walks into its <code>weights/</code> directory and
+    picks the most recently modified <code>weights_Epoch*</code> file &mdash; the last epoch the
+    worker completed &mdash; then files it under a zero-padded worker index:
+  </p>
+
+<pre class="sh"><i>runAll_alignment_example.sh:143-152</i>
+tar -zxvf MLPTrain_Step${end_step}-aw${ns}.tgz
+cd MLPTrain_Step${end_step}-aw${ns}/weights
+weightfile=`ls -altr | grep "weights_Epoch" | awk '{print $9}' | <b>tail -n1</b>`
+splitindex=`printf "%.3d" ${ns}`
+cp ${weightfile} …/RUN/MergeParamsScript/weights_step${bcnt}/<b>weights_n${splitindex}.txt</b></pre>
+
+  <p>
+    The file name is the channel: <code>WeightsMerge.C</code> recovers the worker index by
+    stripping <code>weights_n</code> and <code>.txt</code> from each name it finds, and marks that
+    index present. A worker that crashed leaves no file, its index stays absent, and the merge
+    proceeds over the survivors &mdash; silently, with the divisor reduced accordingly.
+  </p>
+
+  <h3>Averaging</h3>
+
+  <p>
+    Each weight set is loaded into a <code>TH2D</code> spanning all 24&thinsp;120 chips on one axis
+    and the network parameters on the other. The merge is a single loop over both axes:
+  </p>
+
+<pre class="sh"><i>RUN/MergeParamsScript/WeightsMerge.C:391-400</i>
+for each chip ic, for each weight j:
+    weight = 0
+    for each present patch p:
+        weight += NetworkWeights[p].hWeights(ic, j) <b>/ NetworkWeights.size()</b>
+    BaseNetworkWeight.hWeights(ic, j) = weight</pre>
+
+  <p>
+    There is no weighting by track count, by residual quality or by convergence. A worker that saw
+    an unusually thin sample of a given sensor contributes to that sensor exactly as much as one
+    that saw a rich sample. This is the assumption Figure 2 rests on: because the slices are
+    uniform random partitions of the same batch, the samples are exchangeable and a plain mean is
+    the natural estimator.
+  </p>
+
+  <div class="note caveat">
+    <span class="tag">Silent degradation</span>
+    <p>
+      Absence and failure look identical here. If a worker dies before writing its last epoch, the
+      merge still runs, still produces a well-formed parameter file, and reports only through the
+      <code>weights n#&lt;p&gt; attached</code> lines in
+      <code>alignment-params-merge.log.&lt;b&gt;</code>. Counting those lines is the check that the
+      batch actually had the statistics it was supposed to have.
+    </p>
+  </div>
+
+  <h3>Outputs</h3>
+
+  <p>
+    Alongside the merged parameter file, the macro writes a monitoring tree that carries, per
+    sensor, both the merged parameters and each individual worker's parameters, plus the global
+    position of the sensor before and after the correction &mdash;
+    <code>Sx, Sy, Sr, S&phi;, Sz</code> and the corresponding deltas. That is what makes
+    worker-to-worker spread inspectable after the fact.
+  </p>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>Artifact</th><th>Contents</th><th>Filed under</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="mono">weights_merge_step&lt;b&gt;.txt</td>
+        <td>Merged per-sensor weights; the batch's product</td>
+        <td class="mono">ALIGN/&lt;TAG&gt;/step&lt;b&gt;/</td>
+      </tr>
+      <tr>
+        <td class="mono">Monitor_MergeWeights_step&lt;b&gt;.root</td>
+        <td>Per-sensor tree: merged and per-worker parameters, global positions and deltas</td>
+        <td class="mono">ALIGN/&lt;TAG&gt;/step&lt;b&gt;/</td>
+      </tr>
+      <tr>
+        <td class="mono">weights_merge_&lt;b&gt;.lst</td>
+        <td>Which worker files were found</td>
+        <td class="mono">ALIGN/&lt;TAG&gt;/step&lt;b&gt;/</td>
+      </tr>
+      <tr>
+        <td class="mono">weights_step&lt;b&gt;/</td>
+        <td>The eight collected per-worker weight files</td>
+        <td class="mono">ALIGN/&lt;TAG&gt;/step&lt;b&gt;/</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ==================== 07 ==================== -->
+<section id="handoff">
+  <h2><span class="stage">Section 07</span>Stage 3-1 &mdash; parameter handoff</h2>
+
+  <p class="lede">
+    The merged weights are a bare text file; the module expects a complete archive. The handoff
+    builds one &mdash; and the way it builds it has a consequence that is easy to miss.
+  </p>
+
+<pre class="sh"><i>runAll_alignment_example.sh:170-178</i>
+mkdir -p PARAMS/${TAG}
+cd PARAMS
+cp <b>MLPTrain_Step${BASESTEP}.tgz</b> ${TAG}/          <i># always the reference, never the previous batch</i>
+cd ${TAG}
+tar -zxvf MLPTrain_Step${BASESTEP}.tgz
+mv MLPTrain_Step${BASESTEP} MLPTrain_Step${end_step}
+rm MLPTrain_Step${end_step}/weights/<b>weights.txt</b>
+cp …/step$bcnt/weights_merge_step$bcnt.txt MLPTrain_Step${end_step}/weights/<b>weights.txt</b>
+tar -zcvf MLPTrain_Step${end_step}.tgz MLPTrain_Step${end_step}</pre>
+
+  <figure class="fig">
+    <div class="fig-frame">
+      <svg viewBox="0 0 900 250" role="img" aria-labelledby="fig3t">
+        <title id="fig3t">Every batch archive is rebuilt from the Step900 reference with only weights.txt replaced</title>
+
+        <rect class="d-fill" x="16" y="62" width="236" height="116" rx="2"/>
+        <text class="d-m" x="28" y="82">PARAMS/MLPTrain_Step900.tgz</text>
+        <text class="d-cap" x="28" y="96">REFERENCE — TRACKED IN GIT</text>
+        <text class="d-m" x="28" y="122">UpdateSensorsList.txt</text>
+        <text class="d-m" x="28" y="140">weights/weights.txt</text>
+        <text class="d-m" x="28" y="158">weights/weightsDU.txt</text>
+
+        <rect class="d-acc" x="360" y="62" width="176" height="116" rx="2"/>
+        <text class="d-t b" x="372" y="86">Rebuild</text>
+        <text class="d-t sm" x="372" y="106">unpack reference,</text>
+        <text class="d-t sm" x="372" y="122">rename to Step&lt;n&gt;,</text>
+        <text class="d-t sm" x="372" y="138">swap one file,</text>
+        <text class="d-t sm" x="372" y="154">repack</text>
+
+        <rect class="d-box" x="640" y="62" width="244" height="116" rx="2"/>
+        <text class="d-m" x="652" y="82">PARAMS/&lt;TAG&gt;/…Step&lt;n&gt;.tgz</text>
+        <text class="d-cap" x="652" y="96">NEXT BATCH'S STARTING POINT</text>
+        <text class="d-m" x="652" y="122">UpdateSensorsList.txt</text>
+        <text class="d-m hi" x="652" y="140">weights/weights.txt</text>
+        <text class="d-m" x="652" y="158">weights/weightsDU.txt</text>
+        <text class="d-cap" x="806" y="122">FROM 900</text>
+        <text class="d-cap" x="806" y="158">FROM 900</text>
+
+        <path class="d-l" d="M252 120 L356 120" marker-end="url(#a3)"/>
+        <path class="d-l" d="M536 120 L636 120" marker-end="url(#a3)"/>
+
+        <rect class="d-fill" x="356" y="14" width="196" height="26" rx="2"/>
+        <text class="d-m" x="368" y="31">weights_merge_step&lt;b&gt;.txt</text>
+        <path class="d-la" d="M454 40 L454 58" marker-end="url(#a4)"/>
+        <text class="d-cap" x="548" y="34">THE ONLY FILE THAT ADVANCES</text>
+
+        <text class="d-cap" x="16" y="212">CONSEQUENCE: UpdateSensorsList.txt AND weightsDU.txt NEVER LEAVE THEIR STEP-900 STATE,</text>
+        <text class="d-cap" x="16" y="228">HOWEVER MANY BATCHES RUN.</text>
+
+        <defs>
+          <marker id="a3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0 0 L8 4 L0 8 z" class="h-grey"/>
+          </marker>
+          <marker id="a4" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0 0 L8 4 L0 8 z" class="h-acc"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+    <figcaption>
+      <b>Figure 3</b> The handoff always rebuilds from <code>MLPTrain_Step900.tgz</code>, not from
+      the archive the previous batch produced. Only <code>weights.txt</code> is replaced, so the
+      alignment state that carries across batches is exactly that one file; the update-sensor list
+      and the <code>weightsDU</code> companion are re-seeded from the reference every time.
+    </figcaption>
+  </figure>
+
+  <p>
+    Whether that is intended depends on what those two files mean to the module. If
+    <code>UpdateSensorsList.txt</code> is a static roster of which sensors may move, re-seeding it
+    is harmless and arguably safer. If the module updates it as training proceeds &mdash; and
+    <code>run_train_circle.C</code> does write a fresh one into every step's output &mdash; then
+    that per-step evolution is discarded at the batch boundary, and only the within-batch steps see
+    it. With <code>NSTEPBYBATCH = 1</code> there are no within-batch steps, so it is discarded
+    every time.
+  </p>
+
+  <div class="note">
+    <span class="tag">Worth confirming</span>
+    <p>
+      This is the one place where the manager's bookkeeping can silently disagree with the module's
+      expectations. Comparing <code>UpdateSensorsList.txt</code> inside a worker's output archive
+      against the copy in <code>PARAMS/&lt;TAG&gt;/MLPTrain_Step&lt;n&gt;.tgz</code> settles it in
+      one command.
+    </p>
+  </div>
+</section>
+
+<!-- ==================== 08 ==================== -->
+<section id="chain">
+  <h2><span class="stage">Section 08</span>Step numbering</h2>
+
+  <p>
+    The module numbers its training steps globally and expects step <code>n</code> to find step
+    <code>n-1</code> next to it on disk. The manager keeps that numbering coherent across batches
+    with three derived variables:
+  </p>
+
+<pre class="sh"><i>runAll_alignment_example.sh:90-92</i>
+input_step = BASESTEP + (bcnt - 1) * NSTEPBYBATCH        <i># archive to start from</i>
+start_step = BASESTEP + (bcnt - 1) * NSTEPBYBATCH + 1     <i># first step this batch trains</i>
+end_step   = BASESTEP +  bcnt      * NSTEPBYBATCH         <i># last step this batch trains</i></pre>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th class="mono">bcnt</th><th class="mono">input_step</th><th class="mono">start … end</th><th>Reads</th><th>Produces</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="val">1</td><td class="val">900</td><td class="val">901 … 901</td><td class="mono">PARAMS/Step900.tgz</td><td class="mono">PARAMS/&lt;TAG&gt;/Step901.tgz</td></tr>
+      <tr><td class="val">2</td><td class="val">901</td><td class="val">902 … 902</td><td class="mono">PARAMS/&lt;TAG&gt;/Step901.tgz</td><td class="mono">PARAMS/&lt;TAG&gt;/Step902.tgz</td></tr>
+      <tr><td class="val">⋮</td><td class="val">⋮</td><td class="val">⋮</td><td>⋮</td><td>⋮</td></tr>
+      <tr><td class="val">10</td><td class="val">909</td><td class="val">910 … 910</td><td class="mono">PARAMS/&lt;TAG&gt;/Step909.tgz</td><td class="mono">PARAMS/&lt;TAG&gt;/Step910.tgz</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    <code>BASESTEP = 900</code> is not arbitrary: it is the step number of the reference archive
+    committed to the repository, <code>PARAMS/MLPTrain_Step900.tgz</code>. A run therefore picks up
+    where that reference left off, and the numbering stays globally meaningful across runs.
+  </p>
+
+  <h3>What NSTEPBYBATCH controls</h3>
+
+  <p>
+    With <code>NSTEPBYBATCH = 1</code> each batch trains exactly one step, so
+    <code>start_step == end_step</code> and every step is followed by a merge. Raising it makes each
+    worker chain several steps locally &mdash; <code>process_all_train.sh</code> loops
+    <code>stepI … stepF</code>, and each of those steps reads the previous step's weights from the
+    worker's own directory &mdash; before the workers are merged.
+  </p>
+
+  <p>
+    The parameter therefore sets how much the workers are allowed to drift apart before being
+    reconciled. It trades communication for independence: one merge per step keeps the eight
+    estimates tightly coupled; three steps per merge lets each worker follow its own slice further
+    on its own. Only <code>end_step</code> is ever merged &mdash; the intermediate steps exist only
+    inside the worker.
+  </p>
+</section>
+
+<!-- ==================== 09 ==================== -->
+<section id="remote">
+  <h2><span class="stage">Section 09</span>The distributed variant</h2>
+
+  <p class="lede">
+    <code>RUN/TrainScript/</code> holds a second, unrelated way to run the same training: instead of
+    the driver assigning slices to local background jobs, each machine pulls its own assignment from
+    an HTTP endpoint and pushes its result back. It is not invoked by
+    <code>runAll_alignment_example.sh</code>.
+  </p>
+
+<pre class="sh"><i>RUN/TrainScript/Train.sh</i>
+wget 113.198.138.222/get_align_data                <i># one CSV line: the job spec</i>
+  wid, bid, nNow, nSteps, jparallel, nCore,
+  nData, nEpoch, bxz0, bxz1, byz0, byz1,
+  strRoot, strConst, strResult
+
+wget 113.198.138.180/static/$strRoot               <i># the slice</i>
+wget 113.198.138.180/static/$strConst              <i># the starting alignment</i>
+
+for nStep in $nNow..$nSteps:
+    <i># 7-argument form — job size comes from the server, not from YMLPParallel.h</i>
+    .x run_train_circle.C(nStep, jparallel, nCore, nData, nEpoch, strRoot, strConst)
+    tar -cvzf MLPTrain_Step${nStep}.tgz …
+    upload to /var/www/align_cbnu/repo/apiv1/static/$bid/$wid/
+
+wget 113.198.138.180/report_result?wid=…&amp;now=…&amp;result=…</pre>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th></th><th>Local mode (Section 05)</th><th>Distributed mode</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Work assignment</td><td>Driver, by worker index</td><td>Pulled from a job server</td></tr>
+      <tr><td>Job size</td><td class="mono">#define</td><td>Fields in the CSV response</td></tr>
+      <tr><td>Data transport</td><td>Symlink on local disk</td><td class="mono">wget</td></tr>
+      <tr><td>Result transport</td><td class="mono">mv</td><td>Upload to a shared web root</td></tr>
+      <tr><td>Tree name</td><td class="mono">DataInput</td><td class="mono">tree</td></tr>
+      <tr><td>Merge</td><td>In the same driver</td><td class="mono">runMergeParams.sh</td></tr>
+      <tr><td>Barrier</td><td class="mono">wait</td><td>Batch ID served by the job server</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    The two modes are alternatives, not layers: the distributed client sets
+    <code>SetMode(3)</code> and reads a tree named <code>tree</code>, where the local module reads
+    <code>DataInput</code>, so a slice produced by <code>DataSplit.C</code> is not directly
+    consumable by the distributed client without the intermediate service that produces
+    <code>strRoot</code>. Section 11 lists what would need attention before this path is exercised
+    again.
+  </p>
+</section>
+
+<!-- ==================== 10 ==================== -->
+<section id="config">
+  <h2><span class="stage">Section 10</span>Configuration reference</h2>
+
+  <p>
+    Settings live at three levels, and it is worth being clear about which is which: shell
+    variables in the driver, hard-coded values inside the ROOT macros, and preprocessor macros
+    compiled into the module. Only the first is adjustable without touching a source tree.
+  </p>
+
+  <h4>Driver &mdash; runAll_alignment_example.sh</h4>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Name</th><th class="mono">Value</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">TAG</td><td class="val">argv[1]</td><td>Run name; scopes ALIGN, PARAMS and RESULT</td></tr>
+      <tr><td class="mono">o2dir</td><td class="val">/home/alice/Software/v20230501</td><td>O2 installation loaded via alienv</td></tr>
+      <tr><td class="mono">nsplit</td><td class="val">8</td><td>Slices per batch, and workers per batch</td></tr>
+      <tr><td class="mono">bid</td><td class="val">0</td><td>Batch ID passed through to DataSplit</td></tr>
+      <tr><td class="mono">BASESTEP</td><td class="val">900</td><td>Step number of the reference archive</td></tr>
+      <tr><td class="mono">NSTEPBYBATCH</td><td class="val">1</td><td>Steps trained per batch before merging</td></tr>
+      <tr><td class="mono">bcnt</td><td class="val">1 … 10</td><td>Batch loop bound, written inline</td></tr>
+      <tr><td class="mono">modulename</td><td class="val">v20250627+a_vtx…v20251024</td><td>Which module tarball to unpack</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Data preparation &mdash; RUN/MasterDataScript</h4>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Where</th><th class="mono">Value</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">DataRandomMerge.C:22</td><td class="val">dataSetDir</td><td>Absolute path to the reconstructed track files</td></tr>
+      <tr><td class="mono">DataRandomMerge.C:70-78</td><td class="val">10 files</td><td>The candidate list the shuffle draws from</td></tr>
+      <tr><td class="mono">DataRandomMerge.C:116</td><td class="val">maxSelection = 5</td><td>How many are actually merged per batch</td></tr>
+      <tr><td class="mono">DataRandomMerge.C:26</td><td class="val">masterDir = MasterData</td><td>Staging directory for the symlinks</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Merge &mdash; RUN/MergeParamsScript/WeightsMerge.C</h4>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Name</th><th class="mono">Value</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">nPARALLEL</td><td class="val">200</td><td>Maximum worker slots the merge can address</td></tr>
+      <tr><td class="mono">nLAYER</td><td class="val">7</td><td>ITS2 layers</td></tr>
+      <tr><td class="mono">nW</td><td class="val">11</td><td>Network weights per sensor</td></tr>
+      <tr><td class="mono">ChipBoundary[7]</td><td class="val">24120</td><td>Total ALPIDE chips</td></tr>
+      <tr><td class="mono">mode</td><td class="val">0</td><td>Patch-to-master; the only implemented mode</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Module &mdash; inside MODULE/&lt;modulename&gt;.tgz</h4>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Where</th><th class="mono">Value</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">YMLPParallel.h</td><td class="val">nDATA = 50000</td><td>Events used per worker</td></tr>
+      <tr><td class="mono">YMLPParallel.h</td><td class="val">nEPOCH = 5</td><td>Epochs per step</td></tr>
+      <tr><td class="mono">YMLPParallel.h</td><td class="val">jparallel = 0</td><td>Module-internal parallel index</td></tr>
+      <tr><td class="mono">YMLPParallel.h</td><td class="val">nCORE = 1</td><td>Cores per worker</td></tr>
+      <tr><td class="mono">YMLPBeamProfile.h</td><td class="val">generated</td><td>Written by run_profile_beam.C each run</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note">
+    <span class="tag">Sizing</span>
+    <p>
+      <code>nsplit &times; nCORE</code> is the CPU the run wants, and <code>nsplit</code> also
+      divides the batch, so raising it buys parallelism at the cost of statistics per worker. With
+      <code>nDATA = 50 000</code> each worker wants that many events in its own slice, which sets
+      the floor on how much data one batch must merge.
+    </p>
+  </div>
+</section>
+
+<!-- ==================== 11 ==================== -->
+<section id="gaps">
+  <h2><span class="stage">Section 11</span>Gaps in the checked-in tree</h2>
+
+  <p class="lede">
+    The repository is a record of a pipeline that runs on a specific machine, not a self-contained
+    distribution. The following are differences between what the scripts assume and what the tree
+    provides, listed so that a reader does not have to rediscover them. None of them is a
+    correction being proposed here.
+  </p>
+
+  <h3>Would stop a run on a fresh clone</h3>
+
+  <div class="gap">
+    <span class="where">runAll_alignment_example.sh:66 &middot; RUN/MasterDataScript.0/</span>
+    <p>
+      The driver enters <code>./RUN/MasterDataScript</code>; the directory in the tree is
+      <code>RUN/MasterDataScript.0</code>. Stage 1 cannot find its macros as checked in.
+    </p>
+  </div>
+
+  <div class="gap">
+    <span class="where">DataRandomMerge.C:26,103,108,120</span>
+    <p>
+      The macro stages its symlinks in <code>MasterData/</code> and lists that directory to build
+      the file list. Nothing creates it &mdash; not the macro, not
+      <code>run_dir_maker.sh</code> &mdash; so it must already exist beside the macros.
+    </p>
+  </div>
+
+  <div class="gap">
+    <span class="where">DataRandomMerge.C:22 &middot; runAll_alignment_example.sh:13 &middot; process_all_master.sh:9</span>
+    <p>
+      <code>dataSetDir</code> and <code>o2dir</code> are absolute paths to one workstation's
+      storage and O2 build. They are the two values a new machine must change first.
+    </p>
+  </div>
+
+  <h3>Fragile, but works in place</h3>
+
+  <div class="gap">
+    <span class="where">runAll_alignment_example.sh:128-131</span>
+    <p>
+      Inside the per-step loop, the rename is followed by
+      <code>mv MLPTrain_Step*.tgz</code> &mdash; a glob that matches every archive present, not
+      only the one just renamed. It is harmless while <code>NSTEPBYBATCH = 1</code> leaves a single
+      archive in the directory; with more steps per batch, the first iteration moves the archives
+      the later iterations expect to rename.
+    </p>
+    <p>
+      <code>mkdir ../buffer_step$bcnt</code> in the same loop has no <code>-p</code>, so it reports
+      an error on every iteration after the first.
+    </p>
+  </div>
+
+  <div class="gap">
+    <span class="where">runAll_alignment_example.sh:149</span>
+    <p>
+      The last-epoch weight file is selected by parsing field 9 of <code>ls -altr</code>. This
+      depends on the <code>ls</code> output format, and picks by modification time rather than by
+      epoch number.
+    </p>
+  </div>
+
+  <div class="gap">
+    <span class="where">DataSplit.C:33 &middot; module run_train_circle.C:33,39,43,48</span>
+    <p>
+      Several <code>mkdir</code> calls omit <code>-p</code>, so a re-run over an existing directory
+      writes an error to the log without failing the job.
+    </p>
+  </div>
+
+  <div class="gap">
+    <span class="where">RUN/MasterDataScript.0/runDataPrep.sh:4 vs runAll_alignment_example.sh:21</span>
+    <p>
+      The standalone data-prep script uses <code>nsplit = 10</code> where the driver uses
+      <code>8</code>. Slices prepared by one are not a matched set for the other.
+    </p>
+  </div>
+
+  <h3>In the distributed path only</h3>
+
+  <div class="gap">
+    <span class="where">RUN/TrainScript/run_train_circle.C:11</span>
+    <p>
+      <code>SetSourceDataName(strData)</code> refers to an identifier that is not declared; the
+      parameter carrying that value is named <code>strRoot</code>. The macro would not compile as
+      written.
+    </p>
+  </div>
+
+  <div class="gap">
+    <span class="where">Train.sh:129 &middot; runMergeParams.sh:22,26,30</span>
+    <p>
+      Uploads are written as <code>ssh -p 22315 ./file user@host:/path</code>, which passes the
+      local file as the remote command rather than copying it. The matching download on
+      <code>runMergeParams.sh:14</code> correctly uses <code>scp</code>.
+    </p>
+  </div>
+
+  <div class="gap">
+    <span class="where">Train.sh:135</span>
+    <p>
+      The result-report URL contains unquoted <code>&amp;</code> characters, so the shell splits it
+      into background jobs and only <code>wget …?wid=$wid</code> is actually requested. The
+      <code>result=</code> parameter also names <code>MLPTrain_Step6.tgz</code> literally rather
+      than the step just completed.
+    </p>
+  </div>
+
+  <div class="note">
+    <span class="tag">Reading order</span>
+    <p>
+      For anyone picking this up: start at <code>runAll_alignment_example.sh</code> and read it
+      top to bottom &mdash; it is 182 lines and contains the whole orchestration. Everything else
+      in <code>RUN/</code> is a leaf that it calls.
+    </p>
+  </div>
+</section>
+
+  </main>
+</div>
+
+<footer>
+  <p>
+    Compiled from the manager tree at <code>original-v20251024</code>. Line references point at
+    that revision. The training internals referenced throughout are documented in
+    <code>docs/workflow.html</code> of ALICE-ITS2-ML-Alignment-2024 and
+    ALICE-ITS2-ML-Alignment-2025.
+  </p>
+</footer>
+
+</div>
