@@ -17,6 +17,7 @@ DATA_FILES:list:data
 DATA_FILES_PER_BATCH:int:data
 DATA_MERGE_MAX_FILES:int:data
 MODULE_NAME:name:module
+TRACK_SCHEMA:enum:module
 MODULE_EVENTS:int:module
 MODULE_EPOCHS:int:module
 MODULE_JPARALLEL:int:module
@@ -111,6 +112,14 @@ ac_validate() {
         if ! echo "$v" | grep -qE '^[0-9]+$'; then
           echo "  $k: expected a whole number, got '$v'" >&2; bad=1
         fi ;;
+      enum)
+        case "$k" in
+          TRACK_SCHEMA)
+            case "$v" in
+              2024|2025) ;;
+              *) echo "  $k: expected 2024 or 2025, got '$v'" >&2; bad=1 ;;
+            esac ;;
+        esac ;;
       dir|path|name)
         case "$v" in
           *'"'*) echo "  $k: must not contain a double quote" >&2; bad=1 ;;
@@ -164,6 +173,24 @@ ac_gen_ymlpparallel() {
   } > "$out"
 }
 
+# The track schema, for DataInputStructure.h and DataSplit.C. The 2025 input
+# tree carries a per-track charge field; the 2024 tree does not. Getting this
+# wrong is not a compile error -- it produces a tree the module misreads -- so
+# it is a generated define rather than a hand-edited one.
+ac_gen_dataschema() {
+   local out="$1" has_charge=0
+   [ "$TRACK_SCHEMA" = "2025" ] && has_charge=1
+   { _ac_banner
+     echo "#ifndef DATASCHEMA_H"
+     echo "#define DATASCHEMA_H"
+     echo
+     echo "#define ALIGN_TRACK_SCHEMA     $TRACK_SCHEMA"
+     echo "#define ALIGN_TRACK_HAS_CHARGE $has_charge"
+     echo
+     echo "#endif"
+   } > "$out"
+}
+
 # The data location and the file selection, for DataRandomMerge.C.
 ac_gen_datasetconfig() {
   local out="$1" f n=0
@@ -191,6 +218,8 @@ ac_gen_datasetconfig() {
 ac_generate() {
   ac_gen_datasetconfig "$AC_MASTER_DIR/DataSetConfig.h" || return 1
   echo "wrote $AC_MASTER_DIR/DataSetConfig.h"
+  ac_gen_dataschema "$AC_MASTER_DIR/DataSchema.h" || return 1
+  echo "wrote $AC_MASTER_DIR/DataSchema.h (track schema $TRACK_SCHEMA)"
   # YMLPParallel.h is written per worker at run time, once the module has
   # been unpacked; a copy here documents what the workers will receive.
   ac_gen_ymlpparallel "$AC_ROOT/config/YMLPParallel.h.generated" || return 1
@@ -228,6 +257,33 @@ ac_doctor() {
     _ac_ok "DataSetConfig.h present"
   else
     _ac_bad "missing $AC_MASTER_DIR/DataSetConfig.h -- run 'alignctl.sh generate'"
+  fi
+  if [ -f "$AC_MASTER_DIR/DataSchema.h" ]; then
+    _ac_ok "DataSchema.h present"
+  else
+    _ac_bad "missing $AC_MASTER_DIR/DataSchema.h -- run 'alignctl.sh generate'"
+  fi
+
+  # The module and the split files must agree about the track schema. The
+  # module carries its own copy of the structure, so ask the archive rather
+  # than trusting the name.
+  if [ -f "$AC_MODULE_TGZ" ]; then
+    local mod_header mod_charge
+    mod_header=$(tar -xzOf "$AC_MODULE_TGZ" --wildcards '*/Ymlp/inc/DataInputStructure.h' 2>/dev/null)
+    if [ -z "$mod_header" ]; then
+      _ac_warn "could not read Ymlp/inc/DataInputStructure.h from the module archive; track schema not cross-checked"
+    else
+      if echo "$mod_header" | grep -qE '^[[:space:]]*int[[:space:]]+charge[[:space:]]*;'; then
+        mod_charge=2025
+      else
+        mod_charge=2024
+      fi
+      if [ "$mod_charge" = "$TRACK_SCHEMA" ]; then
+        _ac_ok "track schema $TRACK_SCHEMA matches the module archive"
+      else
+        _ac_bad "TRACK_SCHEMA is $TRACK_SCHEMA but the module archive expects $mod_charge -- the split files would be misread"
+      fi
+    fi
   fi
 
   echo "archives"

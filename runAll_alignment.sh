@@ -50,7 +50,8 @@ say "data-prep in : ${AC_MASTER_DIR}"
 
 # Push the settings that live inside ROOT macros before anything reads them.
 ac_gen_datasetconfig "$AC_MASTER_DIR/DataSetConfig.h" || die "could not write DataSetConfig.h"
-say "wrote $AC_MASTER_DIR/DataSetConfig.h"
+ac_gen_dataschema   "$AC_MASTER_DIR/DataSchema.h"   || die "could not write DataSchema.h"
+say "wrote DataSetConfig.h and DataSchema.h (track schema ${TRACK_SCHEMA})"
 
 # DataRandomMerge.C stages its symlinks here and lists the directory to build
 # its file list; nothing else creates it.

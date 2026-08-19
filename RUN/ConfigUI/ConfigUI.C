@@ -58,6 +58,7 @@ private:
    TGLabel       *fFileCount;
 
    TGComboBox    *fModuleName;
+   TGComboBox    *fTrackSchema;
    TGNumberEntry *fEvents;
    TGNumberEntry *fEpochs;
    TGNumberEntry *fJParallel;
@@ -281,6 +282,24 @@ void AlignConfigUI::BuildModule(TGCompositeFrame *tab)
    row->AddFrame(fModuleName, new TGLayoutHints(kLHintsExpandX | kLHintsCenterY, 0, 4, 4, 4));
    tab->AddFrame(row, new TGLayoutHints(kLHintsExpandX, 2, 2, 4, 4));
 
+   TGHorizontalFrame *schemaRow = new TGHorizontalFrame(tab);
+   TGLabel *sl = new TGLabel(schemaRow, "Track schema");
+   sl->SetWidth(150);
+   schemaRow->AddFrame(sl, new TGLayoutHints(kLHintsCenterY, 4, 6, 4, 4));
+   fTrackSchema = new TGComboBox(schemaRow);
+   fTrackSchema->AddEntry("2024   (no per-track charge)", 2024);
+   fTrackSchema->AddEntry("2025   (per-track charge)", 2025);
+   fTrackSchema->Resize(260, 22);
+   schemaRow->AddFrame(fTrackSchema, new TGLayoutHints(kLHintsCenterY, 0, 4, 4, 4));
+   tab->AddFrame(schemaRow, new TGLayoutHints(kLHintsExpandX, 2, 2, 0, 4));
+
+   tab->AddFrame(new TGLabel(tab,
+      "The 2025 input tree carries a per-track charge and the 2024 tree does not, so this"),
+      new TGLayoutHints(kLHintsLeft, 158, 4, 0, 0));
+   tab->AddFrame(new TGLabel(tab,
+      "must match the archive above. Check machine reads the archive and verifies it."),
+      new TGLayoutHints(kLHintsLeft, 158, 4, 0, 8));
+
    tab->AddFrame(new TGLabel(tab,
       "These four are #defines inside the archive. They are written into each worker's"),
       new TGLayoutHints(kLHintsLeft, 158, 4, 8, 0));
@@ -396,6 +415,8 @@ void AlignConfigUI::LoadAll()
       selected = id;
    }
    if (selected >= 0) fModuleName->Select(selected, kFALSE);
+
+   fTrackSchema->Select(Get("TRACK_SCHEMA").Atoi(), kFALSE);
 
    fEvents->SetIntNumber(Get("MODULE_EVENTS").Atoll());
    fEpochs->SetIntNumber(Get("MODULE_EPOCHS").Atoll());
@@ -548,6 +569,7 @@ void AlignConfigUI::OnSave()
    args += TString::Format(" DATA_FILES_PER_BATCH=%lld", (Long64_t)fFilesPerBatch->GetIntNumber());
    args += TString::Format(" DATA_MERGE_MAX_FILES=%lld", (Long64_t)fMergeMax->GetIntNumber());
    args += " MODULE_NAME=" + Quote(moduleName);
+   args += TString::Format(" TRACK_SCHEMA=%d", fTrackSchema->GetSelected());
    args += TString::Format(" MODULE_EVENTS=%lld",    (Long64_t)fEvents->GetIntNumber());
    args += TString::Format(" MODULE_EPOCHS=%lld",    (Long64_t)fEpochs->GetIntNumber());
    args += TString::Format(" MODULE_JPARALLEL=%lld", (Long64_t)fJParallel->GetIntNumber());

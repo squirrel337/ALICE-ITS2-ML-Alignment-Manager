@@ -1,5 +1,11 @@
 #define nLAYER 		7
 
+// Which fields the input tree carries. Generated from config/alignment.conf
+// by config/alignctl.sh, because the 2025 module's tree has a per-track
+// charge and the 2024 module's does not. Deliberately not defaulted here: a
+// silent guess would produce a tree the module misreads rather than an error.
+#include "DataSchema.h"
+
 // TrackData Class //
 class TrackData : public TObject {
    public:
@@ -10,6 +16,9 @@ class TrackData : public TObject {
       //TString Det[nLAYER];
       int index, ncluster;  
       double p, pt, theta, phi, eta;      
+#if ALIGN_TRACK_HAS_CHARGE
+      int charge;
+#endif
       double tv1, 	tv2,		tv3;
       double tv1_X0,	tv2_X0, 	tv3_X0;
       double tv1_DCA, 	tv2_DCA, 	tv3_DCA;
@@ -48,6 +57,9 @@ TrackData::TrackData(TrackData* trackdata){
    theta    = trackdata->theta;
    phi      = trackdata->phi;
    eta      = trackdata->eta;
+#if ALIGN_TRACK_HAS_CHARGE
+   charge   = trackdata->charge;
+#endif
    tv1	    = trackdata->tv1;
    tv2      = trackdata->tv2;
    tv3      = trackdata->tv3;

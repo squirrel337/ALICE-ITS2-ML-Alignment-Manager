@@ -91,6 +91,9 @@ void splitData(TTree* tree, EventData* s_eventdata, o2::its::GeometryTGeo* gm, i
          b_trackdata[splitIndex]->theta    = s_trackdata->theta;
          b_trackdata[splitIndex]->phi      = s_trackdata->phi;
          b_trackdata[splitIndex]->eta      = s_trackdata->eta;
+#if ALIGN_TRACK_HAS_CHARGE
+         b_trackdata[splitIndex]->charge   = s_trackdata->charge;
+#endif
 
          b_trackdata[splitIndex]->tv1      = s_trackdata->tv1;
          b_trackdata[splitIndex]->tv2      = s_trackdata->tv2;
