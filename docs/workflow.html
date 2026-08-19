@@ -812,7 +812,7 @@ resultdir=<b>"${homedir}/RESULT"</b>        resultcontainer=<b>"${resultdir}/${T
 │   └── &lt;TAG&gt;/
 │       └── result_step_&lt;b&gt;/
 ├── RUN/
-│   ├── MasterDataScript.0/               <i>DataRandomMerge.C, DataSplit.C</i>
+│   ├── MasterDataScript/                 <i>DataRandomMerge.C, DataSplit.C</i>
 │   ├── MergeParamsScript/                <i>WeightsMerge.C, YDetectorGeometry</i>
 │   └── TrainScript/                      <i>remote-training client (Section 09)</i>
 ├── runAll_alignment_example.sh
@@ -1468,14 +1468,6 @@ wget 113.198.138.180/report_result?wid=…&amp;now=…&amp;result=…</pre>
   <h3>Would stop a run on a fresh clone</h3>
 
   <div class="gap">
-    <span class="where">runAll_alignment_example.sh:66 &middot; RUN/MasterDataScript.0/</span>
-    <p>
-      The driver enters <code>./RUN/MasterDataScript</code>; the directory in the tree is
-      <code>RUN/MasterDataScript.0</code>. Stage 1 cannot find its macros as checked in.
-    </p>
-  </div>
-
-  <div class="gap">
     <span class="where">DataRandomMerge.C:26,103,108,120</span>
     <p>
       The macro stages its symlinks in <code>MasterData/</code> and lists that directory to build
@@ -1527,7 +1519,7 @@ wget 113.198.138.180/report_result?wid=…&amp;now=…&amp;result=…</pre>
   </div>
 
   <div class="gap">
-    <span class="where">RUN/MasterDataScript.0/runDataPrep.sh:4 vs runAll_alignment_example.sh:21</span>
+    <span class="where">RUN/MasterDataScript/runDataPrep.sh:4 vs runAll_alignment_example.sh:21</span>
     <p>
       The standalone data-prep script uses <code>nsplit = 10</code> where the driver uses
       <code>8</code>. Slices prepared by one are not a matched set for the other.

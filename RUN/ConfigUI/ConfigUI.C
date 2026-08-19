@@ -337,10 +337,10 @@ void AlignConfigUI::BuildEnvironment(TGCompositeFrame *tab)
    fMasterDir = MakeRow(tab, "Data-prep macros", "OnBrowseMaster()");
 
    tab->AddFrame(new TGLabel(tab,
-      "Leave the macro directory empty to auto-detect RUN/MasterDataScript, falling back"),
+      "Leave the macro directory empty to use RUN/MasterDataScript. Set it only for a"),
       new TGLayoutHints(kLHintsLeft, 158, 4, 6, 0));
    tab->AddFrame(new TGLabel(tab,
-      "to RUN/MasterDataScript.0, which is the directory that exists in the repository."),
+      "tree laid out somewhere else."),
       new TGLayoutHints(kLHintsLeft, 158, 4, 0, 8));
 
    TGHorizontalFrame *r = new TGHorizontalFrame(tab);

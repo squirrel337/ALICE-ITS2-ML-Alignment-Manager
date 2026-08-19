@@ -83,15 +83,11 @@ ac_derive() {
   AC_MODULE_TGZ="$AC_ROOT/MODULE/${MODULE_NAME}.tgz"
   AC_REFERENCE_TGZ="$AC_ROOT/PARAMS/MLPTrain_Step${BASE_STEP}.tgz"
 
-  # The driver in the tree enters RUN/MasterDataScript; the directory that
-  # exists is RUN/MasterDataScript.0. Accept either, preferring the
-  # unsuffixed one, unless the configuration names a directory outright.
+  # Data-prep macros, overridable for a tree laid out somewhere else.
   if [ -n "$MASTER_DATA_SCRIPT_DIR" ]; then
     AC_MASTER_DIR="$MASTER_DATA_SCRIPT_DIR"
-  elif [ -d "$AC_ROOT/RUN/MasterDataScript" ]; then
-    AC_MASTER_DIR="$AC_ROOT/RUN/MasterDataScript"
   else
-    AC_MASTER_DIR="$AC_ROOT/RUN/MasterDataScript.0"
+    AC_MASTER_DIR="$AC_ROOT/RUN/MasterDataScript"
   fi
 
   AC_MERGE_DIR="$AC_ROOT/RUN/MergeParamsScript"
