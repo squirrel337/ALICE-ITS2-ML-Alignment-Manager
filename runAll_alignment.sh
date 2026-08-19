@@ -125,6 +125,7 @@ for (( bcnt = 1; bcnt <= N_BATCHES; bcnt++ )); do
 
   # ---- stage 2: parallel training ----
   say "[2/4] launching ${N_WORKERS} workers"
+  worker_pid=()
   for (( ns = 0; ns < N_WORKERS; ns++ )); do
     workdir="${alignworker}/align_worker_${ns}/${modulename}"
     slice="${alignworker}/step${bcnt}/alignment-input-data-split${ns}.root"
@@ -145,11 +146,23 @@ for (( bcnt = 1; bcnt <= N_BATCHES; bcnt++ )); do
 
     ./process_all_master.sh "${TAG}" "${start_step}" "${end_step}" \
         > "${alignworker}/step${bcnt}/worker_${ns}.log" 2>&1 &
+    worker_pid[$ns]=$!
     sleep "${WORKER_LAUNCH_STAGGER}"
   done
 
+  # A bare `wait` discards every exit status, so a run that lost workers used
+  # to finish and report success. Wait on each pid and say which ones failed.
   say "[2/4] waiting for the workers"
-  wait
+  worker_failed=0
+  for (( ns = 0; ns < N_WORKERS; ns++ )); do
+    if ! wait "${worker_pid[$ns]}"; then
+      echo "  warning: worker ${ns} exited non-zero (see step${bcnt}/worker_${ns}.log)" >&2
+      worker_failed=$((worker_failed + 1))
+    fi
+  done
+  if [ "$worker_failed" -gt 0 ]; then
+    say "[2/4] ${worker_failed} of ${N_WORKERS} workers failed; the merge will use the rest"
+  fi
 
   # ---- collect ----
   for (( ns = 0; ns < N_WORKERS; ns++ )); do
@@ -176,6 +189,11 @@ for (( bcnt = 1; bcnt <= N_BATCHES; bcnt++ )); do
   # WeightsMerge.C merges whatever this directory contains, so a file left by a
   # previous run -- or by a run with more workers -- would be averaged in.
   rm -rf "${AC_MERGE_DIR}/weights_step${bcnt}"
+  # ...and the macro's own outputs, so the check below cannot pass on a file
+  # an interrupted earlier attempt at this batch left behind.
+  rm -f "${AC_MERGE_DIR}/weights_merge_step${bcnt}.txt" \
+        "${AC_MERGE_DIR}/weights_merge_${bcnt}.lst" \
+        "${AC_MERGE_DIR}/Monitor_MergeWeights_step${bcnt}.root"
   mkdir -p "${AC_MERGE_DIR}/weights_step${bcnt}"
 
   found=0
@@ -185,7 +203,15 @@ for (( bcnt = 1; bcnt <= N_BATCHES; bcnt++ )); do
 
     cd "${resultcontainer}/result_step_${bcnt}" || die "cannot enter the result container"
     rm -rf "MLPTrain_Step${end_step}" "MLPTrain_Step${end_step}-aw${ns}"
-    tar -zxf "$archive"
+    # A truncated archive used to unpack partially and be merged as zeros.
+    if ! tar -zxf "$archive"; then
+      echo "  warning: worker ${ns} archive is unreadable or truncated; left out of the merge" >&2
+      continue
+    fi
+    [ -d "MLPTrain_Step${end_step}" ] || {
+      echo "  warning: worker ${ns} archive holds no MLPTrain_Step${end_step}; left out of the merge" >&2
+      continue
+    }
     mv "MLPTrain_Step${end_step}" "MLPTrain_Step${end_step}-aw${ns}"
 
     # Newest weights_Epoch file: the last epoch the worker finished.
@@ -208,7 +234,7 @@ for (( bcnt = 1; bcnt <= N_BATCHES; bcnt++ )); do
   cd "$AC_MERGE_DIR" || die "cannot enter $AC_MERGE_DIR"
   root -l -b -q "WeightsMerge.C(${bcnt})" &> "alignment-params-merge.log.${bcnt}" \
     || die "WeightsMerge failed (batch ${bcnt})"
-  [ -f "weights_merge_step${bcnt}.txt" ] || die "WeightsMerge produced no weights_merge_step${bcnt}.txt"
+  [ -s "weights_merge_step${bcnt}.txt" ] || die "WeightsMerge produced no usable weights_merge_step${bcnt}.txt"
 
   mv "alignment-params-merge.log.${bcnt}"      "${alignworker}/step${bcnt}/"
   mv "Monitor_MergeWeights_step${bcnt}.root"   "${alignworker}/step${bcnt}/" 2>/dev/null

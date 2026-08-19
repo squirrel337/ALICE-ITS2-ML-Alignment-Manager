@@ -208,12 +208,14 @@ struct YmWs {
 Bool_t LoadWeights(Option_t * filename, Network NetworkWeight, bool extended = true)
 {
    TString filen = filename;
-   Double_t w;
+   Double_t w = 0;
    if (filen == "") {
       Error("LoadWeights()","Invalid file name");
       return kFALSE;
    }
-   char *buff = new char[100];
+   // Four of the getline calls below pass 200 while this was allocated as 100.
+   const int kBuffLen = 256;
+   char *buff = new char[kBuffLen];
    std::ifstream input(filen.Data());
    
    
@@ -227,23 +229,23 @@ Bool_t LoadWeights(Option_t * filename, Network NetworkWeight, bool extended = t
    }
    
    // input normalzation
-   input.getline(buff, 100);
+   input.getline(buff, kBuffLen);
    Float_t n1,n2;
    for(int lay=0; lay<nLAYER; lay++){
       input >> n1 >> n2;
       input >> n1 >> n2;         
    }
-   input.getline(buff, 200);
+   input.getline(buff, kBuffLen);
    // output normalization
-   input.getline(buff, 200);
+   input.getline(buff, kBuffLen);
    for(int lay=0; lay<nLAYER; lay++){
       input >> n1 >> n2;
       input >> n1 >> n2;         
       input >> n1 >> n2;               
    }
-   input.getline(buff, 200);
+   input.getline(buff, kBuffLen);
    // neuron weights
-   input.getline(buff, 200);
+   input.getline(buff, kBuffLen);
 
    int nentries = extended==false ? nW : nW + 6; 
    for(int ic = 0; ic < ChipBoundary[nLAYER]; ic++){
@@ -254,6 +256,16 @@ Bool_t LoadWeights(Option_t * filename, Network NetworkWeight, bool extended = t
          //NetworkWeight[ic][iw] = w;
       }
    }    
+   // Nothing above checks the stream. A file truncated part-way through the
+   // chip loop leaves every later read failing, and each failed read leaves w
+   // unchanged -- so the last value parsed was written into all remaining
+   // bins and the patch was still reported as good.
+   if (input.fail()) {
+      Error("LoadWeights()","%s is truncated or malformed (expected %d chips x %d columns)",
+            filen.Data(), ChipBoundary[nLAYER], nentries);
+      delete[] buff;
+      return kFALSE;
+   }
    delete[] buff;
    return kTRUE;
 }
@@ -294,9 +306,19 @@ Bool_t DumpWeights(Option_t * filename, Network NetworkWeight, bool extended = t
       }               
       *output<<std::endl;                                        
    } 
+   // Ask the stream before it is destroyed: a short write (a full disk) would
+   // otherwise produce a truncated parameter file reported as a success.
+   Bool_t writeFailed = kFALSE;
    if (filen != "-") {
       ((std::ofstream *) output)->close();
+      writeFailed = output->fail();
       delete output;
+   } else {
+      writeFailed = output->fail();
+   }
+   if (writeFailed) {
+      Error("DumpWeights()","writing %s failed; the merged parameters are incomplete", filen.Data());
+      return kFALSE;
    }
    return kTRUE;
 }
@@ -519,7 +541,7 @@ void WeightsMerge(int seed = 1){
 
    if(nSOURCEFILES==0){
       Error("WeightsMerge()","weights_step%d/ holds no weights_nNNN.txt; nothing to merge", seed);
-      return;
+      gSystem->Exit(1);
    }
 
    // patch information
@@ -558,11 +580,13 @@ void WeightsMerge(int seed = 1){
       }
       if(NetworkWeights.size()==0){
          Error("WeightsMerge()","no patch could be read; refusing to write a merged file");
-         return;
+         gSystem->Exit(1);
       }
       std::cerr<<"Merging "<<NetworkWeights.size()<<" patch(es)"<<std::endl;
       MergeWeights(seed);
-      DumpWeights(Form("weights_merge_step%d.txt",seed),BaseNetworkWeight);
+      if(!DumpWeights(Form("weights_merge_step%d.txt",seed),BaseNetworkWeight)){
+         gSystem->Exit(1);
+      }
       NetworkWeights.clear();
    }
 }

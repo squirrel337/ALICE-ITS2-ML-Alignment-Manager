@@ -97,9 +97,14 @@ ac_derive() {
   AC_MODULE_TGZ="$AC_ROOT/MODULE/${MODULE_NAME}.tgz"
   AC_REFERENCE_TGZ="$AC_ROOT/PARAMS/MLPTrain_Step${BASE_STEP}.tgz"
 
-  # Data-prep macros, overridable for a tree laid out somewhere else.
+  # Data-prep macros, overridable for a tree laid out somewhere else. A
+  # relative override is resolved against the repository root, not against
+  # whatever directory the driver happens to be in when it is used.
   if [ -n "$MASTER_DATA_SCRIPT_DIR" ]; then
-    AC_MASTER_DIR="$MASTER_DATA_SCRIPT_DIR"
+    case "$MASTER_DATA_SCRIPT_DIR" in
+      /*) AC_MASTER_DIR="$MASTER_DATA_SCRIPT_DIR" ;;
+      *)  AC_MASTER_DIR="$AC_ROOT/$MASTER_DATA_SCRIPT_DIR" ;;
+    esac
   else
     AC_MASTER_DIR="$AC_ROOT/RUN/MasterDataScript"
   fi

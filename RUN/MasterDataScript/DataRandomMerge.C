@@ -126,6 +126,12 @@ bool random(int seed, int maxSelection = 2){
       TString cmd = Form("ln -s %s .",(const char*)source);
       std::cout<<" "<<i<<" "<<dataSet[index_DATASET[i]]<<" "<<cmd<<std::endl;
       gSystem->Exec(Form("cd %s && %s",(const char*)masterDir,(const char*)cmd));
+      TString staged = Form("%s/%s",(const char*)masterDir,(const char*)dataSet[index_DATASET[i]]);
+      if (gSystem->AccessPathName(staged, kReadPermission)) {
+         Error("random()","could not stage %s (a repeated entry in the file list?)",
+               (const char*)dataSet[index_DATASET[i]]);
+         nmissing++;
+      }
    };
    gSystem->Exec(Form("cd %s && ls -al",(const char*)masterDir));
 
@@ -183,9 +189,9 @@ void DataRandomMerge(int seed = 1, int nMAXfiles = 20){
    }
    TRandom3 lst_rndm(seed);
    Int_t j, k;
-   Int_t a = nSOURCEFILES - 1;
-   for (Int_t i = 0; i < nSOURCEFILES; i++) {
-      j = (Int_t) (lst_rndm.Rndm() * a);
+   for (Int_t i = nSOURCEFILES - 1; i > 0; i--) {
+      j = (Int_t) (lst_rndm.Rndm() * (i + 1));
+      if (j > i) j = i;                      // Rndm() is [0,1); belt and braces
       k = index[j];
       index[j] = index[i];
       index[i] = k;
