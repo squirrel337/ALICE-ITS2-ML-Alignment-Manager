@@ -363,7 +363,11 @@ ac_set() {
       line = $0
       n = gsub(/"/, "", line)
       print key "=\"" val "\""
-      if (n < 2) skipping = 1
+      # An odd number of quotes means the value is still open and continues on
+      # the following lines, so they belong to it and are replaced too. An even
+      # number -- including a value written without quotes at all -- means the
+      # line stands alone, and skipping past it would eat the next setting.
+      if (n % 2 == 1) skipping = 1
       found = 1
       next
     }
