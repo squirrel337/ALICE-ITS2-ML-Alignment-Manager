@@ -220,7 +220,7 @@ ac_doctor() {
   if [ -d "$AC_MASTER_DIR/MasterData" ]; then
     _ac_ok "MasterData staging directory"
   else
-    _ac_bad "missing $AC_MASTER_DIR/MasterData -- DataRandomMerge.C needs it (mkdir it)"
+    _ac_bad "missing $AC_MASTER_DIR/MasterData -- it is tracked, so it was removed; restore it with 'git checkout -- $AC_MASTER_DIR/MasterData' or ./run_dir_maker.sh"
   fi
 
   # DataRandomMerge.C includes this; it is generated, not committed.

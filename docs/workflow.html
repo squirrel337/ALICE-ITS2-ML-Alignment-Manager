@@ -1468,15 +1468,6 @@ wget 113.198.138.180/report_result?wid=…&amp;now=…&amp;result=…</pre>
   <h3>Would stop a run on a fresh clone</h3>
 
   <div class="gap">
-    <span class="where">DataRandomMerge.C:26,103,108,120</span>
-    <p>
-      The macro stages its symlinks in <code>MasterData/</code> and lists that directory to build
-      the file list. Nothing creates it &mdash; not the macro, not
-      <code>run_dir_maker.sh</code> &mdash; so it must already exist beside the macros.
-    </p>
-  </div>
-
-  <div class="gap">
     <span class="where">DataRandomMerge.C:22 &middot; runAll_alignment_example.sh:13 &middot; process_all_master.sh:9</span>
     <p>
       <code>dataSetDir</code> and <code>o2dir</code> are absolute paths to one workstation's

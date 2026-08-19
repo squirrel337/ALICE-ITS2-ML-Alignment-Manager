@@ -3,9 +3,6 @@
 RUN/MasterDataScript/DataSetConfig.h
 config/YMLPParallel.h.generated
 
-# Staging directory DataRandomMerge.C symlinks input files into.
-RUN/MasterDataScript/MasterData/
-
 # Run output the macros leave in their own directories.
 RUN/MasterDataScript/alignment-input-data-*.log.*
 RUN/MasterDataScript/MasterData_*.lst

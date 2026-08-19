@@ -1,0 +1,12 @@
+# Staging directory for DataRandomMerge.C: it symlinks the selected input
+# files in here, lists the directory to build MasterData_<batch>.lst, and
+# hadds what the list names.
+#
+# Git cannot record an empty directory, so this placeholder is what makes the
+# directory exist after a clone. It must stay a dotfile: the macro clears the
+# directory with `rm *` at the start of every batch, which does not match
+# dotfiles, and builds its file list with `ls`, which does not show them. A
+# visible placeholder would be deleted on the first batch and, before that,
+# would enter the list and be handed to hadd as if it were a ROOT file.
+*
+!.gitignore
