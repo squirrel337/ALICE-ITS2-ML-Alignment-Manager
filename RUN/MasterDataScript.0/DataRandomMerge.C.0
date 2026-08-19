@@ -1,0 +1,77 @@
+
+// 20M / 10000event
+
+// 200 clients * 25000 events / training by one machine = 5,000,000 events -> 20*500 = 10G
+
+void DataRandomMerge(int seed = 1, int nMAXfiles = 20){
+ 
+   std::clog<<"DataRandomMerge STEP 1"<<std::endl;
+
+   gSystem->Exec(Form("ls MasterData > MasterData_%d.lst",seed));
+
+   TString TARGETFILE  = Form("alignment-input-data_%d.root",seed);
+   TString SOURCEFILES = "";
+   std::vector<TString> fSOURCEFILE;
+   int nSOURCEFILES = 0;
+
+   std::clog<<"DataRandomMerge STEP 2"<<std::endl;
+   TString filen = Form("MasterData_%d.lst",seed);
+   TString filename = "";
+   if (filen == "") {
+      Error("No MasterData List file","Invalid");
+      return;
+   }
+   char *buff = new char[200];
+   std::ifstream input(filen.Data());
+
+   while (input) {
+      input >> filename ;
+      std::cout<<"#"<<nSOURCEFILES<<" "<<filename<<std::endl;
+      if(filename!="") fSOURCEFILE.push_back(filename);
+      filename="";
+      nSOURCEFILES++;
+      //if(nSOURCEFILES>=nMAXfiles) break;
+   }
+   nSOURCEFILES--;
+   delete[] buff;
+
+   if(nSOURCEFILES<nMAXfiles) nMAXfiles = nSOURCEFILES;
+
+   //shuffle
+   int* index = new int[nSOURCEFILES];
+   for (Int_t i = 0; i < nSOURCEFILES; i++) {
+      index[i] = i;
+   }
+   TRandom3 lst_rndm(seed);
+   Int_t j, k;
+   Int_t a = nSOURCEFILES - 1;
+   for (Int_t i = 0; i < nSOURCEFILES; i++) {
+      j = (Int_t) (lst_rndm.Rndm() * a);
+      k = index[j];
+      index[j] = index[i];
+      index[i] = k;
+   }
+
+   for (Int_t i = 0; i < nMAXfiles; i++) {
+      std::cout<<"SHUFLE "<<i<<" -> "<<index[i]<<" | TOTAL "<<nSOURCEFILES<<std::endl;
+   }
+
+   // original order
+   std::cout<<" Loaded Files"<<std::endl;
+   for(int f = 0; f < nMAXfiles; f++){
+      std::cout<<"#"<<f<<" "<<fSOURCEFILE[f]<<std::endl;
+   }
+
+   std::cout<<" Shuffled Lists"<<std::endl;
+   for(int f = 0; f < nMAXfiles; f++){
+      std::cout<<"#"<<f<<" "<<fSOURCEFILE[index[f]]<<std::endl;
+      SOURCEFILES += "MasterData/" + fSOURCEFILE[index[f]] + " ";
+   }
+ 
+   std::cout<<"hadd merge START"<<std::endl;
+   std::cout<<"TARGET : "<<TARGETFILE<<std::endl;
+   std::cout<<"SOURCE : "<<SOURCEFILES<<std::endl;
+
+   gSystem->Exec(Form("hadd %s %s",(const char*)TARGETFILE, (const char*)SOURCEFILES));
+   //storePlots("monitor");
+}

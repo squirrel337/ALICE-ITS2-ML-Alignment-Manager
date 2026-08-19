@@ -1,0 +1,137 @@
+
+// 20M / 10000event
+
+// 200 clients * 25000 events / training by one machine = 5,000,000 events -> 20*500 = 10G
+
+TString dataSetDir="/home/centos7/Data/ALICE2022pp";
+std::vector<TString> dataSet;
+TString masterDir="MasterData";
+
+void random(int seed, int maxSelection = 2){
+
+   dataSet.push_back("520296/1040/alignment-input-data_run00520296_1040.root"); //o
+   dataSet.push_back("520296/1050/alignment-input-data_run00520296_1050.root"); //o
+   dataSet.push_back("520296/1110/alignment-input-data_run00520296_1110.root"); //o
+   dataSet.push_back("520296/1120/alignment-input-data_run00520296_1120.root"); //o 
+   dataSet.push_back("520296/1130/alignment-input-data_run00520296_1130.root"); //o
+   dataSet.push_back("520296/1150/alignment-input-data_run00520296_1150.root"); //o
+   dataSet.push_back("520296/1200/alignment-input-data_run00520296_1200.root"); //o
+   //dataSet.push_back("520370/1610/alignment-input-data_run00520370_1610.root"); //o
+   //dataSet.push_back("520370/1620/alignment-input-data_run00520370_1620.root"); //o
+   //dataSet.push_back("520372/1630/alignment-input-data_run00520372_1630.root"); //o
+   dataSet.push_back("520472/1510/alignment-input-data_run00520472_1510.root"); //o
+   dataSet.push_back("520472/1520/alignment-input-data_run00520472_1520.root"); //o
+   dataSet.push_back("520472/1530/alignment-input-data_run00520472_1530.root"); //o
+   dataSet.push_back("520472/1540/alignment-input-data_run00520472_1540.root"); //o
+   dataSet.push_back("520472/1550/alignment-input-data_run00520472_1550.root"); //o
+   dataSet.push_back("520472/1600/alignment-input-data_run00520472_1600.root"); //o
+   dataSet.push_back("520472/1610/alignment-input-data_run00520472_1610.root"); //o
+  
+   int nDATASETS = dataSet.size();
+
+   //shuffle
+   int* index_DATASET = new int[nDATASETS];
+   for (int i = 0; i < nDATASETS; i++) {
+      index_DATASET[i] = i;
+   }
+   TRandom3 datalst_rndm(seed);
+   Int_t j, k;
+   Int_t a = nDATASETS - 1;
+   for (int i = 0; i < nDATASETS; i++) {
+      j = (Int_t) (datalst_rndm.Rndm() * a);
+      k = index_DATASET[j];
+      index_DATASET[j] = index_DATASET[i];
+      index_DATASET[i] = k;
+   }
+
+   std::cout<<"LIST ORIGINAL"<<std::endl;
+   for (int i = 0; i < nDATASETS; i++) {
+      std::cout<<" "<<i<<" "<<dataSet[i]<<std::endl;
+   };
+   std::cout<<"LIST SHUFFLED"<<std::endl;
+   TString init_cmd = Form("rm *");
+   gSystem->Exec(Form("cd %s;%s",(const char*)masterDir,(const char*)init_cmd));
+   for (int i = 0; i < maxSelection; i++) {
+      //std::cout<<" "<<i<<" "<<dataSet[index_DATASET[i]]<<std::endl;
+      TString cmd = Form("ln -s %s/%s .",(const char*)dataSetDir,(const char*)dataSet[index_DATASET[i]]);
+      std::cout<<" "<<i<<" "<<dataSet[index_DATASET[i]]<<" "<<cmd<<std::endl;
+      gSystem->Exec(Form("cd %s;%s",(const char*)masterDir,(const char*)cmd));
+   };
+   gSystem->Exec(Form("cd %s; ls -al",(const char*)masterDir));
+};
+
+void DataRandomMerge(int seed = 1, int nMAXfiles = 20){
+
+   std::clog<<"DataRandomMerge STEP 0"<<std::endl;
+   random(seed,2);
+
+   std::clog<<"DataRandomMerge STEP 1"<<std::endl;
+
+   gSystem->Exec(Form("ls MasterData > MasterData_%d.lst",seed));
+
+   TString TARGETFILE  = Form("alignment-input-data_%d.root",seed);
+   TString SOURCEFILES = "";
+   std::vector<TString> fSOURCEFILE;
+   int nSOURCEFILES = 0;
+
+   std::clog<<"DataRandomMerge STEP 2"<<std::endl;
+   TString filen = Form("MasterData_%d.lst",seed);
+   TString filename = "";
+   if (filen == "") {
+      Error("No MasterData List file","Invalid");
+      return;
+   }
+   char *buff = new char[200];
+   std::ifstream input(filen.Data());
+
+   while (input) {
+      input >> filename ;
+      std::cout<<"#"<<nSOURCEFILES<<" "<<filename<<std::endl;
+      if(filename!="") fSOURCEFILE.push_back(filename);
+      filename="";
+      nSOURCEFILES++;
+      //if(nSOURCEFILES>=nMAXfiles) break;
+   }
+   nSOURCEFILES--;
+   delete[] buff;
+
+   if(nSOURCEFILES<nMAXfiles) nMAXfiles = nSOURCEFILES;
+
+   //shuffle
+   int* index = new int[nSOURCEFILES];
+   for (Int_t i = 0; i < nSOURCEFILES; i++) {
+      index[i] = i;
+   }
+   TRandom3 lst_rndm(seed);
+   Int_t j, k;
+   Int_t a = nSOURCEFILES - 1;
+   for (Int_t i = 0; i < nSOURCEFILES; i++) {
+      j = (Int_t) (lst_rndm.Rndm() * a);
+      k = index[j];
+      index[j] = index[i];
+      index[i] = k;
+   }
+
+   for (Int_t i = 0; i < nMAXfiles; i++) {
+      std::cout<<"SHUFLE "<<i<<" -> "<<index[i]<<" | TOTAL "<<nSOURCEFILES<<std::endl;
+   }
+
+   // original order
+   std::cout<<" Loaded Files"<<std::endl;
+   for(int f = 0; f < nMAXfiles; f++){
+      std::cout<<"#"<<f<<" "<<fSOURCEFILE[f]<<std::endl;
+   }
+
+   std::cout<<" Shuffled Lists"<<std::endl;
+   for(int f = 0; f < nMAXfiles; f++){
+      std::cout<<"#"<<f<<" "<<fSOURCEFILE[index[f]]<<std::endl;
+      SOURCEFILES += "MasterData/" + fSOURCEFILE[index[f]] + " ";
+   }
+ 
+   std::cout<<"hadd merge START"<<std::endl;
+   std::cout<<"TARGET : "<<TARGETFILE<<std::endl;
+   std::cout<<"SOURCE : "<<SOURCEFILES<<std::endl;
+
+   gSystem->Exec(Form("hadd %s %s",(const char*)TARGETFILE, (const char*)SOURCEFILES));
+   //storePlots("monitor");
+}
