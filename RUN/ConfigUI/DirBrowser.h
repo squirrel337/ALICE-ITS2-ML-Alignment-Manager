@@ -145,6 +145,7 @@ void DirBrowser::Fill(TGListTreeItem *node, const char *path, Int_t depth)
       Fill(child, full, depth - 1);
       if (++added > 2000) break;                      // guard against huge trees
    }
+   entries->Delete();
    delete entries;
 }
 

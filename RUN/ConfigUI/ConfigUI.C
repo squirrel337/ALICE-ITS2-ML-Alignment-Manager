@@ -27,6 +27,7 @@
 #include <TGTextEntry.h>
 #include <TGNumberEntry.h>
 #include <TGComboBox.h>
+#include <TGListBox.h>
 #include <TGTextView.h>
 #include <TGCanvas.h>
 #include <TGListTree.h>
@@ -51,6 +52,7 @@ private:
    TGTextEntry   *fPattern;
    TGListTree    *fFileTree;
    TGCanvas      *fFileCanvas;
+   TGCompositeFrame *fFileCountRow;   // holds fFileCount; re-laid out on rescan
    TGNumberEntry *fFilesPerBatch;
    TGNumberEntry *fMergeMax;
    TGLabel       *fFileCount;
@@ -67,6 +69,7 @@ private:
    TGNumberEntry *fNWorkers;
    TGNumberEntry *fBatchId;
    TGLabel       *fSummary;
+   TGCompositeFrame *fSummaryHolder;  // holds fSummary; re-laid out on change
 
    TGTextEntry   *fO2Dir;
    TGTextEntry   *fMasterDir;
@@ -247,6 +250,7 @@ void AlignConfigUI::BuildData(TGCompositeFrame *tab)
    row->AddFrame(rescan, new TGLayoutHints(kLHintsLeft, 158, 8, 4, 4));
    fFileCount = new TGLabel(row, "no directory listed yet");
    row->AddFrame(fFileCount, new TGLayoutHints(kLHintsCenterY, 0, 4, 4, 4));
+   fFileCountRow = row;
    tab->AddFrame(row, new TGLayoutHints(kLHintsExpandX, 2, 2, 1, 1));
 
    fFileCanvas = new TGCanvas(tab, 840, 220);
@@ -325,6 +329,7 @@ void AlignConfigUI::BuildSchedule(TGCompositeFrame *tab)
 
    fSummary = new TGLabel(tab, " ");
    tab->AddFrame(fSummary, new TGLayoutHints(kLHintsLeft, 158, 4, 14, 4));
+   fSummaryHolder = tab;
 
    tab->AddFrame(new TGLabel(tab,
       "Workers is capped at 200 because WeightsMerge.C addresses that many slots (nPARALLEL)."),
@@ -383,6 +388,7 @@ void AlignConfigUI::LoadAll()
          if (name == current) selected = id;
          id++;
       }
+      files->Delete();
       delete files;
    }
    if (selected < 0 && !current.IsNull()) {
@@ -422,13 +428,20 @@ void AlignConfigUI::UpdateSummary()
    fSummary->SetText(TString::Format(
       "steps %ld to %ld  |  %ld steps total  |  %ld module runs  |  %ld merges",
       base + 1, base + total, total, batches * workers, batches));
-   fSummary->GetParent()->Layout();
+   fSummaryHolder->Layout();
 }
 
 // Lists the input directory and ticks the files the configuration selects.
 void AlignConfigUI::Rescan()
 {
-   fFileTree->DeleteChildren(0);
+   // DeleteChildren() dereferences the item it is given, so a null "root"
+   // is not a way to empty the tree; remove the top-level items instead.
+   TGListTreeItem *old = fFileTree->GetFirstItem();
+   while (old) {
+      TGListTreeItem *nextItem = old->GetNextSibling();
+      fFileTree->DeleteItem(old);
+      old = nextItem;
+   }
 
    TString dirName = fDataDir->GetText();
    if (dirName.IsNull()) { fFileCount->SetText("no input directory set"); return; }
@@ -465,10 +478,11 @@ void AlignConfigUI::Rescan()
          if (on) ticked++;
          shown++;
       }
+      files->Delete();
       delete files;
    }
    fFileCount->SetText(TString::Format("%d file(s) match, %d selected", shown, ticked));
-   fFileCount->GetParent()->Layout();
+   fFileCountRow->Layout();
    fClient->NeedRedraw(fFileTree);
 }
 
