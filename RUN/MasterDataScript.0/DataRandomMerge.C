@@ -19,7 +19,11 @@
 //TString dataSetDir="/run/media/root/Storage1/Data/2023pp/alignment-input/LHC23zt_Standard/20240405_aligned_v20240129+CERN+ITSR+5.0um+DZ+AI6_inputs";
 //TString dataSetDir="/run/media/root/Storage1/Data/2023pp/alignment-input/LHC23zt_Standard/20240405_aligned_v20240129+CERN+ITSR+5.0um+DZ+AI6+AI3_inputs";
 //TString dataSetDir="/run/media/root/Storage1/Data/2023pp/alignment-input/LHC23zt_Standard/20240405_aligned_v20240129+CERN+ITSR+5.0um+DZ+AI6+AI3+gloXYZwMcorr.Revise1+AI3+ITS-x30um_inputs";
-TString dataSetDir="/run/media/root/Storage1/Data/2023pp/alignment-input/LHC23zt_Standard/20240405_aligned_v20240129+CERN+ITSR+5.0um+DZ+AI6+AI3_O2_20240229_inputs";
+#include "DataSetConfig.h"   // generated from config/alignment.conf
+
+// The commented history above records earlier campaigns; the directory in
+// use is now the configured one.
+TString dataSetDir = kDataSetDir;
 
 
 std::vector<TString> dataSet;
@@ -66,16 +70,10 @@ void random(int seed, int maxSelection = 2){
    
    */
 
-   //dataSet.push_back("alignment-input-data_run00539884_0630_1_useDCA.root");
-   dataSet.push_back("alignment-input-data_run00539884_0630_2_useDCA.root");
-   dataSet.push_back("alignment-input-data_run00539884_0630_3_useDCA.root");
-   dataSet.push_back("alignment-input-data_run00539884_0630_4_useDCA.root");
-   dataSet.push_back("alignment-input-data_run00539884_0630_5_useDCA.root");
-   dataSet.push_back("alignment-input-data_run00539884_0630_6_useDCA.root");
-   dataSet.push_back("alignment-input-data_run00539884_0630_7_useDCA.root");
-   dataSet.push_back("alignment-input-data_run00539884_0630_8_useDCA.root");
-   dataSet.push_back("alignment-input-data_run00539884_0630_9_useDCA.root");
-   dataSet.push_back("alignment-input-data_run00539884_0630_10_useDCA.root");
+   // The selection is configured in config/alignment.conf and reaches this
+   // macro through the header config/alignctl.sh generates. Files that used
+   // to be commented out here are simply left unticked there.
+   for (int i = 0; i < kNDataFiles; i++) dataSet.push_back(kDataFiles[i]);
 
    int nDATASETS = dataSet.size();
 
@@ -113,7 +111,7 @@ void random(int seed, int maxSelection = 2){
 void DataRandomMerge(int seed = 1, int nMAXfiles = 20){
 
    std::clog<<"DataRandomMerge STEP 0"<<std::endl;
-   random(seed,5);
+   random(seed,kFilesPerBatch);
 
    std::clog<<"DataRandomMerge STEP 1"<<std::endl;
 

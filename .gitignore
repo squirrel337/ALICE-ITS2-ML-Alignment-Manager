@@ -1,0 +1,17 @@
+# Generated from config/alignment.conf by config/alignctl.sh generate.
+# The configuration is the source of truth; these are derived.
+RUN/MasterDataScript*/DataSetConfig.h
+config/YMLPParallel.h.generated
+
+# Staging directory DataRandomMerge.C symlinks input files into.
+RUN/MasterDataScript*/MasterData/
+
+# Run output the macros leave in their own directories.
+RUN/MasterDataScript*/alignment-input-data-*.log.*
+RUN/MasterDataScript*/MasterData_*.lst
+RUN/MasterDataScript*/alignment-input-data_*.root
+RUN/MasterDataScript*/step*/
+RUN/MergeParamsScript/alignment-params-merge.log.*
+RUN/MergeParamsScript/weights_step*/
+RUN/MergeParamsScript/weights_merge_*
+RUN/MergeParamsScript/Monitor_MergeWeights_*
