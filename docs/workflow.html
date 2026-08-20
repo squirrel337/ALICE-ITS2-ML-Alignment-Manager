@@ -499,12 +499,13 @@ pre.sh u { color: var(--accent); text-decoration: none; }
   </p>
   <dl class="meta">
     <div><dt>Repository</dt><dd>ALICE-ITS2-ML-Alignment-Manager</dd></div>
-    <div><dt>Entry point</dt><dd>runAll_alignment_example.sh &lt;TAG&gt;</dd></div>
+    <div><dt>Entry point</dt><dd>runAll_alignment.sh &lt;TAG&gt;</dd></div>
     <div><dt>Implementation</dt><dd>bash + ROOT macros (C++ interpreted)</dd></div>
+    <div><dt>Configuration</dt><dd>config/alignment.conf &middot; alignctl.sh &middot; ROOT window</dd></div>
     <div><dt>Training module</dt><dd>delivered as MODULE/&lt;name&gt;.tgz</dd></div>
-    <div><dt>Parallel workers</dt><dd>nsplit = 8 per batch</dd></div>
+    <div><dt>Parallel workers</dt><dd>N_WORKERS = 8 per batch</dd></div>
     <div><dt>Batches</dt><dd>10, one alignment step each</dd></div>
-    <div><dt>Step range</dt><dd>901 &rarr; 910 (BASESTEP 900)</dd></div>
+    <div><dt>Step range</dt><dd>901 &rarr; 910 (BASE_STEP 900)</dd></div>
     <div><dt>Merge strategy</dt><dd>unweighted mean over workers</dd></div>
   </dl>
 </header>
@@ -518,13 +519,13 @@ pre.sh u { color: var(--accent); text-decoration: none; }
       <li><a href="#repos"><span class="num">01</span>Three repositories</a></li>
       <li><a href="#loop"><span class="num">02</span>One batch, end to end</a></li>
       <li><a href="#dirs"><span class="num">03</span>Working directories</a></li>
-      <li><a href="#prep"><span class="num">04</span>Stage 1 &mdash; data preparation</a></li>
-      <li><a href="#fanout"><span class="num">05</span>Stage 2 &mdash; parallel training</a></li>
-      <li><a href="#merge"><span class="num">06</span>Stage 3 &mdash; weight merge</a></li>
-      <li><a href="#handoff"><span class="num">07</span>Stage 3-1 &mdash; parameter handoff</a></li>
-      <li><a href="#chain"><span class="num">08</span>Step numbering</a></li>
-      <li><a href="#remote"><span class="num">09</span>The distributed variant</a></li>
-      <li><a href="#config"><span class="num">10</span>Configuration reference</a></li>
+      <li><a href="#config"><span class="num">04</span>Configuration</a></li>
+      <li><a href="#prep"><span class="num">05</span>Stage 1 &mdash; data preparation</a></li>
+      <li><a href="#fanout"><span class="num">06</span>Stage 2 &mdash; parallel training</a></li>
+      <li><a href="#merge"><span class="num">07</span>Stage 3 &mdash; weight merge</a></li>
+      <li><a href="#handoff"><span class="num">08</span>Stage 3-1 &mdash; parameter handoff</a></li>
+      <li><a href="#chain"><span class="num">09</span>Step numbering</a></li>
+      <li><a href="#remote"><span class="num">10</span>The distributed variant</a></li>
       <li><a href="#gaps"><span class="num">11</span>Gaps in the checked-in tree</a></li>
     </ol>
   </nav>
@@ -813,9 +814,18 @@ resultdir=<b>"${homedir}/RESULT"</b>        resultcontainer=<b>"${resultdir}/${T
 │       └── result_step_&lt;b&gt;/
 ├── RUN/
 │   ├── MasterDataScript/                 <i>DataRandomMerge.C, DataSplit.C</i>
+│   │   ├── MasterData/                   <i>staging for the input symlinks</i>
+│   │   ├── DataSetConfig.h               <i>generated, not committed</i>
+│   │   └── DataSchema.h                  <i>generated, not committed</i>
 │   ├── MergeParamsScript/                <i>WeightsMerge.C, YDetectorGeometry</i>
-│   └── TrainScript/                      <i>remote-training client (Section 09)</i>
-├── runAll_alignment_example.sh
+│   ├── TrainScript/                      <i>remote-training client (Section 10)</i>
+│   └── ConfigUI/                         <i>the configuration window</i>
+├── <b>config/</b>                                <i>the configuration and its tooling</i>
+│   ├── alignment.conf                    <i>every setting (Section 04)</i>
+│   ├── alignconf.sh                      <i>load, validate, generate, doctor</i>
+│   └── alignctl.sh                       <i>the command line</i>
+├── <b>runAll_alignment.sh</b>                   <i>the configured driver</i>
+├── runAll_alignment_example.sh           <i>the original, kept unchanged</i>
 └── run_dir_maker.sh</pre>
 
   <p>
@@ -836,10 +846,166 @@ resultdir=<b>"${homedir}/RESULT"</b>        resultcontainer=<b>"${resultdir}/${T
     </p>
   </div>
 </section>
-
 <!-- ==================== 04 ==================== -->
+<section id="config">
+  <h2><span class="stage">Section 04</span>Configuration</h2>
+
+  <p class="lede">
+    Every setting a run needs is in <code>config/alignment.conf</code>. Nothing else in the tree
+    has to be edited to change where the data comes from, which module is used, how big each
+    training job is, or how many steps the run takes.
+  </p>
+
+<pre class="sh">./config/alignctl.sh show               <i># every setting, and what follows from it</i>
+./config/alignctl.sh set N_WORKERS=16   <i># change and re-validate; all-or-nothing</i>
+./config/alignctl.sh doctor             <i># check this machine has what the run needs</i>
+./config/alignctl.sh ui                 <i># the same in a ROOT window</i></pre>
+
+  <p>
+    The window (<code>RUN/ConfigUI/ConfigUI.C</code>) browses directories in a
+    <code>TBrowser</code>-style tree and presents the input files as tick boxes. It writes nothing
+    itself &mdash; Save shells out to <code>alignctl.sh</code>, so the file format and the
+    validation rules live in one place and the two cannot disagree.
+  </p>
+
+  <h3>Settings that live inside code</h3>
+
+  <p>
+    Three groups of settings are read by code that cannot source a shell file, so they are pushed
+    out by generating the file that holds them. The generated headers are not committed;
+    <code>generate</code> recreates them, and the driver rewrites them at the start of every run.
+  </p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Setting</th><th>Generated into</th><th>Read by</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="mono">DATA_INPUT_DIR, DATA_FILES,<br>DATA_FILES_PER_BATCH</td>
+        <td class="mono">RUN/MasterDataScript/<br>DataSetConfig.h</td>
+        <td class="mono">DataRandomMerge.C:22</td>
+      </tr>
+      <tr>
+        <td class="mono">TRACK_SCHEMA</td>
+        <td class="mono">RUN/MasterDataScript/<br>DataSchema.h</td>
+        <td class="mono">DataInputStructure.h:7</td>
+      </tr>
+      <tr>
+        <td class="mono">MODULE_EVENTS, MODULE_EPOCHS,<br>MODULE_JPARALLEL, MODULE_CORES</td>
+        <td class="mono">YMLPParallel.h in each<br>unpacked worker module</td>
+        <td>the module itself</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note">
+    <span class="tag">Why generated</span>
+    <p>
+      The module's job size is a set of preprocessor defines inside the frozen archive.
+      Overwriting <code>YMLPParallel.h</code> in the worker's unpacked copy after the module is
+      unpacked is the only way to change it without repacking, so that is what the driver does
+      (<code>runAll_alignment.sh:83</code>). The archive in <code>MODULE/</code> is never modified.
+    </p>
+  </div>
+
+  <h3>The track schema</h3>
+
+  <p>
+    The input tree differs between module generations by one field: the 2025
+    <code>TrackData</code> carries a per-track <code>charge</code> and the 2024 one does not.
+    <code>TRACK_SCHEMA</code> selects which, and <code>DataInputStructure.h</code> and
+    <code>DataSplit.C</code> carry the field and both of its copy sites behind
+    <code>#if ALIGN_TRACK_HAS_CHARGE</code>.
+  </p>
+
+  <div class="note caveat">
+    <span class="tag">Not a compile error</span>
+    <p>
+      Both generations declare <code>ClassDef(TrackData, 1)</code> despite the differing layout, so
+      a tree written without <code>charge</code> and read by a module expecting it leaves the field
+      uninitialised rather than failing. That is why <code>doctor</code> does not take the setting
+      on trust: it extracts <code>Ymlp/inc/DataInputStructure.h</code> from the selected module
+      archive, decides which schema the module expects, and fails when the two disagree.
+    </p>
+  </div>
+
+  <h3>Reference</h3>
+
+  <h4>Data</h4>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Key</th><th class="mono">Default</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">DATA_INPUT_DIR</td><td class="val">absolute path</td><td>Directory holding the reconstructed track files</td></tr>
+      <tr><td class="mono">DATA_FILE_PATTERN</td><td class="val">alignment-input-data*.root</td><td>Glob the window lists candidates with</td></tr>
+      <tr><td class="mono">DATA_FILES</td><td class="val">9 files</td><td>The files training may draw from; holding one back is a tick box</td></tr>
+      <tr><td class="mono">DATA_FILES_PER_BATCH</td><td class="val">5</td><td>How many are shuffled together into one batch</td></tr>
+      <tr><td class="mono">DATA_MERGE_MAX_FILES</td><td class="val">20</td><td>Upper bound on the merge; the effective count is the smaller of the two</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Module</h4>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Key</th><th class="mono">Default</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">MODULE_NAME</td><td class="val">v20250627+a_vtx&hellip;v20251024</td><td>Which archive to unpack, without the .tgz</td></tr>
+      <tr><td class="mono">TRACK_SCHEMA</td><td class="val">2025</td><td>2024 or 2025; must match the archive</td></tr>
+      <tr><td class="mono">MODULE_EVENTS</td><td class="val">50000</td><td>Events used per worker (nDATA)</td></tr>
+      <tr><td class="mono">MODULE_EPOCHS</td><td class="val">5</td><td>Epochs per step (nEPOCH)</td></tr>
+      <tr><td class="mono">MODULE_JPARALLEL</td><td class="val">0</td><td>Module-internal parallel index</td></tr>
+      <tr><td class="mono">MODULE_CORES</td><td class="val">1</td><td>Cores per worker (nCORE)</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Schedule and environment</h4>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Key</th><th class="mono">Default</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">BASE_STEP</td><td class="val">900</td><td>Step number of the reference archive in PARAMS/</td></tr>
+      <tr><td class="mono">STEPS_PER_BATCH</td><td class="val">1</td><td>Steps each worker trains before the workers are merged</td></tr>
+      <tr><td class="mono">N_BATCHES</td><td class="val">10</td><td>Batches in the run</td></tr>
+      <tr><td class="mono">N_WORKERS</td><td class="val">8</td><td>Parallel workers, and slices per batch; capped at 200 by nPARALLEL</td></tr>
+      <tr><td class="mono">BATCH_ID</td><td class="val">0</td><td>Batch ID handed to DataSplit</td></tr>
+      <tr><td class="mono">O2_DIR</td><td class="val">/home/alice/Software/v20230501</td><td>O2 installation loaded with alienv</td></tr>
+      <tr><td class="mono">MASTER_DATA_SCRIPT_DIR</td><td class="val">empty</td><td>Data-prep macro directory; empty means RUN/MasterDataScript</td></tr>
+      <tr><td class="mono">WORKER_LAUNCH_STAGGER</td><td class="val">15</td><td>Seconds between worker launches</td></tr>
+      <tr><td class="mono">RUN_TAG</td><td class="val">empty</td><td>Default tag when the driver is called without one</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Fixed in the macros</h4>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Where</th><th class="mono">Value</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">WeightsMerge.C:5</td><td class="val">nPARALLEL = 200</td><td>Maximum worker slots the merge can address</td></tr>
+      <tr><td class="mono">WeightsMerge.C</td><td class="val">nW = 11</td><td>Network weights per sensor</td></tr>
+      <tr><td class="mono">WeightsMerge.C</td><td class="val">ChipBoundary[7] = 24120</td><td>Total ALPIDE chips</td></tr>
+      <tr><td class="mono">DataRandomMerge.C:30</td><td class="val">masterDir = MasterData</td><td>Staging directory for the symlinks</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note">
+    <span class="tag">Sizing</span>
+    <p>
+      <code>N_WORKERS &times; MODULE_CORES</code> is the CPU the run wants, and
+      <code>N_WORKERS</code> also divides the batch, so raising it buys parallelism at the cost of
+      statistics per worker. With <code>MODULE_EVENTS = 50 000</code> each worker wants that many
+      events in its own slice, which sets the floor on how much data one batch must merge.
+    </p>
+  </div>
+</section>
+
+<!-- ==================== 05 ==================== -->
 <section id="prep">
-  <h2><span class="stage">Section 04</span>Stage 1 &mdash; data preparation</h2>
+  <h2><span class="stage">Section 05</span>Stage 1 &mdash; data preparation</h2>
 
   <p class="lede">
     Two ROOT macros run back to back. The first builds one merged file from a random selection of
@@ -855,20 +1021,38 @@ resultdir=<b>"${homedir}/RESULT"</b>        resultcontainer=<b>"${resultdir}/${T
     symlinks the first few into <code>MasterData/</code>, and <code>hadd</code>s them into one file.
   </p>
 
-<pre class="sh"><i>runAll_alignment_example.sh:69 → RUN/MasterDataScript/DataRandomMerge.C</i>
-root -l -b -q DataRandomMerge.C"(<b>$bcnt</b>,20)"
+<pre class="sh"><i>runAll_alignment.sh:104 → RUN/MasterDataScript/DataRandomMerge.C</i>
+root -l -b -q DataRandomMerge.C"(<b>$bcnt</b>,$DATA_MERGE_MAX_FILES)"
 
-  random(seed=$bcnt, maxSelection=<b>5</b>)   <i># shuffle, symlink 5 files into MasterData/</i>
+  random(seed=$bcnt, maxSelection=<b>kFilesPerBatch</b>)   <i># from DataSetConfig.h</i>
   ls MasterData &gt; MasterData_$bcnt.lst
-  hadd alignment-input-data_$bcnt.root MasterData/…</pre>
+  hadd -f alignment-input-data_$bcnt.root MasterData/…</pre>
 
   <p>
-    The second argument, <code>nMAXfiles = 20</code>, caps the merge; the selection is capped
-    earlier and harder by the <code>maxSelection = 5</code> hard-coded in the call to
-    <code>random()</code>, so five files are merged regardless. Both shuffles are seeded by the
-    batch number, which makes the whole selection reproducible: batch 3 of one run sees exactly the
-    files batch 3 of any other run sees.
+    Both counts now come from the configuration: <code>maxSelection</code> is
+    <code>DATA_FILES_PER_BATCH</code>, reaching the macro as <code>kFilesPerBatch</code> in the
+    generated header, and the second argument is <code>DATA_MERGE_MAX_FILES</code>. The merge is
+    clamped to whatever was actually staged, so the effective count is the smaller of the two &mdash;
+    with the shipped 5 and 20 that is five files, and the cap only bites if it is lowered below
+    the per-batch count.
   </p>
+
+  <p>
+    Both shuffles are seeded by the batch number, which makes the selection reproducible: batch 3
+    of one run sees exactly the files batch 3 of any other run sees, provided the configured file
+    list has not changed.
+  </p>
+
+  <div class="note">
+    <span class="tag">Failure is loud now</span>
+    <p>
+      A selected file that is not on disk used to become a dangling symlink that
+      <code>hadd</code> skipped, silently shrinking the sample; inputs are checked before linking
+      and a missing one stops the batch. <code>hadd</code> is called with <code>-f</code> and its
+      status is checked, so an existing target from an interrupted run can no longer be passed
+      downstream as if it were this batch's data.
+    </p>
+  </div>
 
   <h3>DataSplit.C &mdash; scatter into slices</h3>
 
@@ -880,7 +1064,7 @@ root -l -b -q DataRandomMerge.C"(<b>$bcnt</b>,20)"
     same population.
   </p>
 
-<pre class="sh"><i>RUN/MasterDataScript/DataSplit.C:151</i>
+<pre class="sh"><i>RUN/MasterDataScript/DataSplit.C:154</i>
 DataSplit(seed=<b>$bcnt</b>, nsplit=<b>8</b>, bid=0)
 
   o2::base::GeometryManager::loadGeometry()      <i># O2 geometry, L2G matrix cache</i>
@@ -901,9 +1085,9 @@ DataSplit(seed=<b>$bcnt</b>, nsplit=<b>8</b>, bid=0)
   </p>
 </section>
 
-<!-- ==================== 05 ==================== -->
+<!-- ==================== 06 ==================== -->
 <section id="fanout">
-  <h2><span class="stage">Section 05</span>Stage 2 &mdash; parallel training</h2>
+  <h2><span class="stage">Section 06</span>Stage 2 &mdash; parallel training</h2>
 
   <p class="lede">
     The workers are ordinary background processes on one machine. Each owns a directory, a slice of
@@ -1037,9 +1221,12 @@ sleep 15s                                             <i># stagger, not a barrie
     <span class="tag">Where the knobs live</span>
     <p>
       <code>nDATA</code>, <code>nEPOCH</code>, <code>jparallel</code> and <code>nCORE</code> are
-      <code>#define</code>s compiled into the module at run time. Changing the number of events or
-      epochs means editing the source tree and rebuilding the tarball &mdash; the manager cannot
-      override them, and does not try to.
+      <code>#define</code>s compiled into the module at run time, so they cannot be passed in as
+      arguments. The driver sets them by writing <code>YMLPParallel.h</code> into each worker's
+      unpacked copy after the module is extracted and before ROOT reads it
+      (<code>runAll_alignment.sh:83</code>), which is why they are configuration keys
+      (<code>MODULE_EVENTS</code>, <code>MODULE_EPOCHS</code>, &hellip;) rather than a reason to
+      repack the archive. The archive itself is never modified.
     </p>
   </div>
 
@@ -1062,9 +1249,9 @@ mv MLPTrain_Step* ../buffer_step$bcnt/</pre>
   </p>
 </section>
 
-<!-- ==================== 06 ==================== -->
+<!-- ==================== 07 ==================== -->
 <section id="merge">
-  <h2><span class="stage">Section 06</span>Stage 3 &mdash; weight merge</h2>
+  <h2><span class="stage">Section 07</span>Stage 3 &mdash; weight merge</h2>
 
   <p class="lede">
     Eight workers have produced eight opinions about where every sensor sits. The merge reduces
@@ -1101,7 +1288,7 @@ cp ${weightfile} …/RUN/MergeParamsScript/weights_step${bcnt}/<b>weights_n${spl
     and the network parameters on the other. The merge is a single loop over both axes:
   </p>
 
-<pre class="sh"><i>RUN/MergeParamsScript/WeightsMerge.C:391-400</i>
+<pre class="sh"><i>RUN/MergeParamsScript/WeightsMerge.C:415-423</i>
 for each chip ic, for each weight j:
     weight = 0
     for each present patch p:
@@ -1117,13 +1304,13 @@ for each chip ic, for each weight j:
   </p>
 
   <div class="note caveat">
-    <span class="tag">Silent degradation</span>
+    <span class="tag">Missing workers are counted, not hidden</span>
     <p>
-      Absence and failure look identical here. If a worker dies before writing its last epoch, the
-      merge still runs, still produces a well-formed parameter file, and reports only through the
-      <code>weights n#&lt;p&gt; attached</code> lines in
-      <code>alignment-params-merge.log.&lt;b&gt;</code>. Counting those lines is the check that the
-      batch actually had the statistics it was supposed to have.
+      A worker that produced nothing is left out and the merge proceeds over the survivors, but it
+      is no longer silent: a weights file that is absent, empty or truncated fails to load and is
+      excluded from the average rather than contributing zeros, the driver names each worker it
+      dropped, and the macro logs how many patches it actually merged. Read that count &mdash; the
+      merge still runs on fewer workers than you asked for, it just tells you so.
     </p>
   </div>
 
@@ -1168,9 +1355,9 @@ for each chip ic, for each weight j:
   </div>
 </section>
 
-<!-- ==================== 07 ==================== -->
+<!-- ==================== 08 ==================== -->
 <section id="handoff">
-  <h2><span class="stage">Section 07</span>Stage 3-1 &mdash; parameter handoff</h2>
+  <h2><span class="stage">Section 08</span>Stage 3-1 &mdash; parameter handoff</h2>
 
   <p class="lede">
     The merged weights are a bare text file; the module expects a complete archive. The handoff
@@ -1266,9 +1453,9 @@ tar -zcvf MLPTrain_Step${end_step}.tgz MLPTrain_Step${end_step}</pre>
   </div>
 </section>
 
-<!-- ==================== 08 ==================== -->
+<!-- ==================== 09 ==================== -->
 <section id="chain">
-  <h2><span class="stage">Section 08</span>Step numbering</h2>
+  <h2><span class="stage">Section 09</span>Step numbering</h2>
 
   <p>
     The module numbers its training steps globally and expects step <code>n</code> to find step
@@ -1320,9 +1507,9 @@ end_step   = BASESTEP +  bcnt      * NSTEPBYBATCH         <i># last step this ba
   </p>
 </section>
 
-<!-- ==================== 09 ==================== -->
+<!-- ==================== 10 ==================== -->
 <section id="remote">
-  <h2><span class="stage">Section 09</span>The distributed variant</h2>
+  <h2><span class="stage">Section 10</span>The distributed variant</h2>
 
   <p class="lede">
     <code>RUN/TrainScript/</code> holds a second, unrelated way to run the same training: instead of
@@ -1375,84 +1562,7 @@ wget 113.198.138.180/report_result?wid=…&amp;now=…&amp;result=…</pre>
   </p>
 </section>
 
-<!-- ==================== 10 ==================== -->
-<section id="config">
-  <h2><span class="stage">Section 10</span>Configuration reference</h2>
 
-  <p>
-    Settings live at three levels, and it is worth being clear about which is which: shell
-    variables in the driver, hard-coded values inside the ROOT macros, and preprocessor macros
-    compiled into the module. Only the first is adjustable without touching a source tree.
-  </p>
-
-  <h4>Driver &mdash; runAll_alignment_example.sh</h4>
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th>Name</th><th class="mono">Value</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td class="mono">TAG</td><td class="val">argv[1]</td><td>Run name; scopes ALIGN, PARAMS and RESULT</td></tr>
-      <tr><td class="mono">o2dir</td><td class="val">/home/alice/Software/v20230501</td><td>O2 installation loaded via alienv</td></tr>
-      <tr><td class="mono">nsplit</td><td class="val">8</td><td>Slices per batch, and workers per batch</td></tr>
-      <tr><td class="mono">bid</td><td class="val">0</td><td>Batch ID passed through to DataSplit</td></tr>
-      <tr><td class="mono">BASESTEP</td><td class="val">900</td><td>Step number of the reference archive</td></tr>
-      <tr><td class="mono">NSTEPBYBATCH</td><td class="val">1</td><td>Steps trained per batch before merging</td></tr>
-      <tr><td class="mono">bcnt</td><td class="val">1 … 10</td><td>Batch loop bound, written inline</td></tr>
-      <tr><td class="mono">modulename</td><td class="val">v20250627+a_vtx…v20251024</td><td>Which module tarball to unpack</td></tr>
-    </tbody>
-  </table>
-  </div>
-
-  <h4>Data preparation &mdash; RUN/MasterDataScript</h4>
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th>Where</th><th class="mono">Value</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td class="mono">DataRandomMerge.C:22</td><td class="val">dataSetDir</td><td>Absolute path to the reconstructed track files</td></tr>
-      <tr><td class="mono">DataRandomMerge.C:70-78</td><td class="val">10 files</td><td>The candidate list the shuffle draws from</td></tr>
-      <tr><td class="mono">DataRandomMerge.C:116</td><td class="val">maxSelection = 5</td><td>How many are actually merged per batch</td></tr>
-      <tr><td class="mono">DataRandomMerge.C:26</td><td class="val">masterDir = MasterData</td><td>Staging directory for the symlinks</td></tr>
-    </tbody>
-  </table>
-  </div>
-
-  <h4>Merge &mdash; RUN/MergeParamsScript/WeightsMerge.C</h4>
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th>Name</th><th class="mono">Value</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td class="mono">nPARALLEL</td><td class="val">200</td><td>Maximum worker slots the merge can address</td></tr>
-      <tr><td class="mono">nLAYER</td><td class="val">7</td><td>ITS2 layers</td></tr>
-      <tr><td class="mono">nW</td><td class="val">11</td><td>Network weights per sensor</td></tr>
-      <tr><td class="mono">ChipBoundary[7]</td><td class="val">24120</td><td>Total ALPIDE chips</td></tr>
-      <tr><td class="mono">mode</td><td class="val">0</td><td>Patch-to-master; the only implemented mode</td></tr>
-    </tbody>
-  </table>
-  </div>
-
-  <h4>Module &mdash; inside MODULE/&lt;modulename&gt;.tgz</h4>
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th>Where</th><th class="mono">Value</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td class="mono">YMLPParallel.h</td><td class="val">nDATA = 50000</td><td>Events used per worker</td></tr>
-      <tr><td class="mono">YMLPParallel.h</td><td class="val">nEPOCH = 5</td><td>Epochs per step</td></tr>
-      <tr><td class="mono">YMLPParallel.h</td><td class="val">jparallel = 0</td><td>Module-internal parallel index</td></tr>
-      <tr><td class="mono">YMLPParallel.h</td><td class="val">nCORE = 1</td><td>Cores per worker</td></tr>
-      <tr><td class="mono">YMLPBeamProfile.h</td><td class="val">generated</td><td>Written by run_profile_beam.C each run</td></tr>
-    </tbody>
-  </table>
-  </div>
-
-  <div class="note">
-    <span class="tag">Sizing</span>
-    <p>
-      <code>nsplit &times; nCORE</code> is the CPU the run wants, and <code>nsplit</code> also
-      divides the batch, so raising it buys parallelism at the cost of statistics per worker. With
-      <code>nDATA = 50 000</code> each worker wants that many events in its own slice, which sets
-      the floor on how much data one batch must merge.
-    </p>
-  </div>
-</section>
 
 <!-- ==================== 11 ==================== -->
 <section id="gaps">
@@ -1461,63 +1571,92 @@ wget 113.198.138.180/report_result?wid=…&amp;now=…&amp;result=…</pre>
   <p class="lede">
     The repository is a record of a pipeline that runs on a specific machine, not a self-contained
     distribution. The following are differences between what the scripts assume and what the tree
-    provides, listed so that a reader does not have to rediscover them. None of them is a
-    correction being proposed here.
+    provides, listed so that a reader does not have to rediscover them.
   </p>
 
-  <h3>Would stop a run on a fresh clone</h3>
-
-  <div class="gap">
-    <span class="where">DataRandomMerge.C:22 &middot; runAll_alignment_example.sh:13 &middot; process_all_master.sh:9</span>
+  <div class="note">
+    <span class="tag">What has been fixed</span>
     <p>
-      <code>dataSetDir</code> and <code>o2dir</code> are absolute paths to one workstation's
-      storage and O2 build. They are the two values a new machine must change first.
+      The data-preparation and merge macros were audited and debugged: <code>hadd</code> now runs
+      with <code>-f</code> and its status is checked, the staging clear can no longer delete the
+      macro directory, missing and truncated inputs are detected, both shuffles are proper
+      Fisher-Yates, and a weights file that fails to load is left out of the merge instead of being
+      averaged in as zeros. Those defects are not repeated below.
     </p>
   </div>
 
-  <h3>Fragile, but works in place</h3>
+  <h3>Present in the example driver, fixed in the configured one</h3>
+
+  <p>
+    <code>runAll_alignment_example.sh</code> is deliberately unchanged &mdash; it is the record of
+    the original campaign. Everything here is fixed in <code>runAll_alignment.sh</code>.
+  </p>
 
   <div class="gap">
     <span class="where">runAll_alignment_example.sh:128-131</span>
     <p>
-      Inside the per-step loop, the rename is followed by
-      <code>mv MLPTrain_Step*.tgz</code> &mdash; a glob that matches every archive present, not
-      only the one just renamed. It is harmless while <code>NSTEPBYBATCH = 1</code> leaves a single
-      archive in the directory; with more steps per batch, the first iteration moves the archives
-      the later iterations expect to rename.
-    </p>
-    <p>
-      <code>mkdir ../buffer_step$bcnt</code> in the same loop has no <code>-p</code>, so it reports
-      an error on every iteration after the first.
+      Inside the per-step loop, the rename is followed by <code>mv MLPTrain_Step*.tgz</code> &mdash;
+      a glob that matches every archive present, not only the one just renamed. Harmless while
+      <code>NSTEPBYBATCH = 1</code> leaves a single archive in the directory; with more steps per
+      batch the first iteration moves the archives the later ones expect to rename.
+      <code>mkdir ../buffer_step$bcnt</code> in the same loop has no <code>-p</code>.
     </p>
   </div>
 
   <div class="gap">
     <span class="where">runAll_alignment_example.sh:149</span>
     <p>
-      The last-epoch weight file is selected by parsing field 9 of <code>ls -altr</code>. This
-      depends on the <code>ls</code> output format, and picks by modification time rather than by
+      The last-epoch weight file is selected by parsing field 9 of <code>ls -altr</code>, which
+      depends on the <code>ls</code> output format and picks by modification time rather than by
       epoch number.
     </p>
   </div>
 
   <div class="gap">
-    <span class="where">DataSplit.C:33 &middot; module run_train_circle.C:33,39,43,48</span>
+    <span class="where">runAll_alignment_example.sh:13 &middot; DataRandomMerge.C (historically)</span>
     <p>
-      Several <code>mkdir</code> calls omit <code>-p</code>, so a re-run over an existing directory
-      writes an error to the log without failing the job.
+      The data directory and the O2 path were absolute paths to one workstation, edited in place.
+      Both are configuration keys now (<code>DATA_INPUT_DIR</code>, <code>O2_DIR</code>), so a new
+      machine sets them once rather than editing sources &mdash; but the example driver still
+      carries its own copy.
+    </p>
+  </div>
+
+  <h3>Still open</h3>
+
+  <div class="gap">
+    <span class="where">process_all_master.sh:9 (inside the module archive)</span>
+    <p>
+      The module's own launcher hard-codes the same O2 path. It lives inside
+      <code>MODULE/&lt;name&gt;.tgz</code>, so the manager cannot configure it; changing it means
+      repacking the archive.
     </p>
   </div>
 
   <div class="gap">
-    <span class="where">RUN/MasterDataScript/runDataPrep.sh:4 vs runAll_alignment_example.sh:21</span>
+    <span class="where">RUN/MasterDataScript/runDataPrep.sh:4 vs config DATA/N_WORKERS</span>
     <p>
-      The standalone data-prep script uses <code>nsplit = 10</code> where the driver uses
-      <code>8</code>. Slices prepared by one are not a matched set for the other.
+      The standalone data-prep script keeps its own <code>nsplit = 10</code> and its own inline
+      batch settings. It is not used by either driver, and slices prepared by it are not a matched
+      set for a run configured with a different worker count.
+    </p>
+  </div>
+
+  <div class="gap">
+    <span class="where">module run_train_circle.C:33,39,43,48</span>
+    <p>
+      Several <code>mkdir</code> calls inside the module omit <code>-p</code>, so a re-run over an
+      existing directory writes an error to the log without failing the job. Inside the archive,
+      so not the manager's to fix.
     </p>
   </div>
 
   <h3>In the distributed path only</h3>
+
+  <p>
+    <code>RUN/TrainScript/</code> is not invoked by either driver. These would need attention
+    before that path is exercised again.
+  </p>
 
   <div class="gap">
     <span class="where">RUN/TrainScript/run_train_circle.C:11</span>
@@ -1538,21 +1677,22 @@ wget 113.198.138.180/report_result?wid=…&amp;now=…&amp;result=…</pre>
   </div>
 
   <div class="gap">
-    <span class="where">Train.sh:135</span>
+    <span class="where">Train.sh:127,135</span>
     <p>
-      The result-report URL contains unquoted <code>&amp;</code> characters, so the shell splits it
-      into background jobs and only <code>wget …?wid=$wid</code> is actually requested. The
-      <code>result=</code> parameter also names <code>MLPTrain_Step6.tgz</code> literally rather
-      than the step just completed.
+      The result directory is tarred without checking whether the training step succeeded, so a
+      partially written weights file is packaged normally. The result-report URL then contains
+      unquoted <code>&amp;</code> characters, so the shell splits it into background jobs and only
+      <code>wget &hellip;?wid=$wid</code> is actually requested; the <code>result=</code> parameter
+      also names <code>MLPTrain_Step6.tgz</code> literally rather than the step just completed.
     </p>
   </div>
 
   <div class="note">
     <span class="tag">Reading order</span>
     <p>
-      For anyone picking this up: start at <code>runAll_alignment_example.sh</code> and read it
-      top to bottom &mdash; it is 182 lines and contains the whole orchestration. Everything else
-      in <code>RUN/</code> is a leaf that it calls.
+      For anyone picking this up: run <code>./config/alignctl.sh show</code> and
+      <code>doctor</code> first, then read <code>runAll_alignment.sh</code> top to bottom &mdash;
+      it is the whole orchestration. Everything else in <code>RUN/</code> is a leaf that it calls.
     </p>
   </div>
 </section>
@@ -1562,8 +1702,9 @@ wget 113.198.138.180/report_result?wid=…&amp;now=…&amp;result=…</pre>
 
 <footer>
   <p>
-    Compiled from the manager tree at <code>original-v20251024</code>. Line references point at
-    that revision. The training internals referenced throughout are documented in
+    Compiled from the manager tree after the configuration work and the macro audit. Line
+    references point at the current revision; <code>v0.0.0-original-v20251024</code> marks the
+    tree as it stood before either. The training internals referenced throughout are documented in
     <code>docs/workflow.html</code> of ALICE-ITS2-ML-Alignment-2024 and
     ALICE-ITS2-ML-Alignment-2025.
   </p>
