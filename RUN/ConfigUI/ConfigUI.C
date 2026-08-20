@@ -27,6 +27,7 @@
 #include <TGTextEntry.h>
 #include <TGNumberEntry.h>
 #include <TGComboBox.h>
+#include <TGListBox.h>
 #include <TGTextView.h>
 #include <TGCanvas.h>
 #include <TGListTree.h>
@@ -51,11 +52,13 @@ private:
    TGTextEntry   *fPattern;
    TGListTree    *fFileTree;
    TGCanvas      *fFileCanvas;
+   TGCompositeFrame *fFileCountRow;   // holds fFileCount; re-laid out on rescan
    TGNumberEntry *fFilesPerBatch;
    TGNumberEntry *fMergeMax;
    TGLabel       *fFileCount;
 
    TGComboBox    *fModuleName;
+   TGComboBox    *fTrackSchema;
    TGNumberEntry *fEvents;
    TGNumberEntry *fEpochs;
    TGNumberEntry *fJParallel;
@@ -67,6 +70,7 @@ private:
    TGNumberEntry *fNWorkers;
    TGNumberEntry *fBatchId;
    TGLabel       *fSummary;
+   TGCompositeFrame *fSummaryHolder;  // holds fSummary; re-laid out on change
 
    TGTextEntry   *fO2Dir;
    TGTextEntry   *fMasterDir;
@@ -115,16 +119,20 @@ public:
 
 TString AlignConfigUI::Quote(const TString &s)
 {
-   // Single-quote for the shell. A value containing a single quote is
-   // rejected rather than escaped, because none of these settings should
-   // ever need one.
-   if (s.Contains("'")) return TString("");
-   return TString("'") + s + "'";
+   // POSIX single-quote escaping: close the quote, add an escaped quote,
+   // reopen. There is no failure mode, so no caller has to test for one.
+   TString out = "'";
+   for (Ssiz_t i = 0; i < s.Length(); ++i) {
+      if (s[i] == '\'') out += "'\\''";
+      else                out += s[i];
+   }
+   out += "'";
+   return out;
 }
 
 TString AlignConfigUI::Run(const char *args)
 {
-   TString cmd = TString::Format("%s %s 2>&1", fCtl.Data(), args);
+   TString cmd = Quote(fCtl) + " " + args + " 2>&1";
    return gSystem->GetFromPipe(cmd);
 }
 
@@ -247,6 +255,7 @@ void AlignConfigUI::BuildData(TGCompositeFrame *tab)
    row->AddFrame(rescan, new TGLayoutHints(kLHintsLeft, 158, 8, 4, 4));
    fFileCount = new TGLabel(row, "no directory listed yet");
    row->AddFrame(fFileCount, new TGLayoutHints(kLHintsCenterY, 0, 4, 4, 4));
+   fFileCountRow = row;
    tab->AddFrame(row, new TGLayoutHints(kLHintsExpandX, 2, 2, 1, 1));
 
    fFileCanvas = new TGCanvas(tab, 840, 220);
@@ -276,6 +285,24 @@ void AlignConfigUI::BuildModule(TGCompositeFrame *tab)
    fModuleName->Resize(560, 22);
    row->AddFrame(fModuleName, new TGLayoutHints(kLHintsExpandX | kLHintsCenterY, 0, 4, 4, 4));
    tab->AddFrame(row, new TGLayoutHints(kLHintsExpandX, 2, 2, 4, 4));
+
+   TGHorizontalFrame *schemaRow = new TGHorizontalFrame(tab);
+   TGLabel *sl = new TGLabel(schemaRow, "Track schema");
+   sl->SetWidth(150);
+   schemaRow->AddFrame(sl, new TGLayoutHints(kLHintsCenterY, 4, 6, 4, 4));
+   fTrackSchema = new TGComboBox(schemaRow);
+   fTrackSchema->AddEntry("2024   (no per-track charge)", 2024);
+   fTrackSchema->AddEntry("2025   (per-track charge)", 2025);
+   fTrackSchema->Resize(260, 22);
+   schemaRow->AddFrame(fTrackSchema, new TGLayoutHints(kLHintsCenterY, 0, 4, 4, 4));
+   tab->AddFrame(schemaRow, new TGLayoutHints(kLHintsExpandX, 2, 2, 0, 4));
+
+   tab->AddFrame(new TGLabel(tab,
+      "The 2025 input tree carries a per-track charge and the 2024 tree does not, so this"),
+      new TGLayoutHints(kLHintsLeft, 158, 4, 0, 0));
+   tab->AddFrame(new TGLabel(tab,
+      "must match the archive above. Check machine reads the archive and verifies it."),
+      new TGLayoutHints(kLHintsLeft, 158, 4, 0, 8));
 
    tab->AddFrame(new TGLabel(tab,
       "These four are #defines inside the archive. They are written into each worker's"),
@@ -325,6 +352,7 @@ void AlignConfigUI::BuildSchedule(TGCompositeFrame *tab)
 
    fSummary = new TGLabel(tab, " ");
    tab->AddFrame(fSummary, new TGLayoutHints(kLHintsLeft, 158, 4, 14, 4));
+   fSummaryHolder = tab;
 
    tab->AddFrame(new TGLabel(tab,
       "Workers is capped at 200 because WeightsMerge.C addresses that many slots (nPARALLEL)."),
@@ -383,6 +411,7 @@ void AlignConfigUI::LoadAll()
          if (name == current) selected = id;
          id++;
       }
+      files->Delete();
       delete files;
    }
    if (selected < 0 && !current.IsNull()) {
@@ -390,6 +419,8 @@ void AlignConfigUI::LoadAll()
       selected = id;
    }
    if (selected >= 0) fModuleName->Select(selected, kFALSE);
+
+   fTrackSchema->Select(Get("TRACK_SCHEMA").Atoi(), kFALSE);
 
    fEvents->SetIntNumber(Get("MODULE_EVENTS").Atoll());
    fEpochs->SetIntNumber(Get("MODULE_EPOCHS").Atoll());
@@ -422,13 +453,20 @@ void AlignConfigUI::UpdateSummary()
    fSummary->SetText(TString::Format(
       "steps %ld to %ld  |  %ld steps total  |  %ld module runs  |  %ld merges",
       base + 1, base + total, total, batches * workers, batches));
-   fSummary->GetParent()->Layout();
+   fSummaryHolder->Layout();
 }
 
 // Lists the input directory and ticks the files the configuration selects.
 void AlignConfigUI::Rescan()
 {
-   fFileTree->DeleteChildren(0);
+   // DeleteChildren() dereferences the item it is given, so a null "root"
+   // is not a way to empty the tree; remove the top-level items instead.
+   TGListTreeItem *old = fFileTree->GetFirstItem();
+   while (old) {
+      TGListTreeItem *nextItem = old->GetNextSibling();
+      fFileTree->DeleteItem(old);
+      old = nextItem;
+   }
 
    TString dirName = fDataDir->GetText();
    if (dirName.IsNull()) { fFileCount->SetText("no input directory set"); return; }
@@ -440,6 +478,7 @@ void AlignConfigUI::Rescan()
 
    TString selected = TString(" ") + Get("DATA_FILES") + " ";
    selected.ReplaceAll("\n", " ");
+   selected.ReplaceAll("\t", " ");
 
    TString pat = fPattern->GetText();
    if (pat.IsNull()) pat = "*";
@@ -455,20 +494,37 @@ void AlignConfigUI::Rescan()
       while ((f = (TSystemFile *)next())) {
          if (f->IsDirectory()) continue;
          TString name = f->GetName();
+         Bool_t on = selected.Contains(TString(" ") + name + " ");
          Ssiz_t len = 0;
-         if (name.Index(re, &len) != 0 || len != name.Length()) continue;
+         Bool_t matches = (name.Index(re, &len) == 0 && len == name.Length());
+         // Show anything the pattern matches, and anything already configured
+         // even if it does not. Save reads the tree, so a configured file left
+         // out of the list here would be dropped from the configuration.
+         if (!matches && !on) continue;
 
          TGListTreeItem *item = fFileTree->AddItem(0, name);
          fFileTree->SetCheckBox(item, kTRUE);
-         Bool_t on = selected.Contains(TString(" ") + name + " ");
          fFileTree->CheckItem(item, on);
          if (on) ticked++;
          shown++;
       }
+      files->Delete();
       delete files;
    }
-   fFileCount->SetText(TString::Format("%d file(s) match, %d selected", shown, ticked));
-   fFileCount->GetParent()->Layout();
+   Int_t configured = 0;
+   {
+      TObjArray *names = selected.Tokenize(" ");
+      configured = names->GetEntries();
+      delete names;
+   }
+   if (configured > ticked) {
+      fFileCount->SetText(TString::Format(
+         "%d listed, %d selected -- %d configured file(s) are NOT in this directory "
+         "and saving will drop them", shown, ticked, configured - ticked));
+   } else {
+      fFileCount->SetText(TString::Format("%d file(s) listed, %d selected", shown, ticked));
+   }
+   fFileCountRow->Layout();
    fClient->NeedRedraw(fFileTree);
 }
 
@@ -527,6 +583,13 @@ void AlignConfigUI::OnSave()
       moduleName.ReplaceAll("   (archive not found)", "");
    }
 
+   if (moduleName.IsNull()) {
+      new TGMsgBox(gClient->GetRoot(), this, "No module",
+                   "Pick a module archive on the Module tab before saving.",
+                   kMBIconExclamation, kMBOk);
+      return;
+   }
+
    TString args = "set";
    args += " DATA_INPUT_DIR=" + Quote(fDataDir->GetText());
    args += " DATA_FILE_PATTERN=" + Quote(fPattern->GetText());
@@ -534,6 +597,7 @@ void AlignConfigUI::OnSave()
    args += TString::Format(" DATA_FILES_PER_BATCH=%lld", (Long64_t)fFilesPerBatch->GetIntNumber());
    args += TString::Format(" DATA_MERGE_MAX_FILES=%lld", (Long64_t)fMergeMax->GetIntNumber());
    args += " MODULE_NAME=" + Quote(moduleName);
+   args += TString::Format(" TRACK_SCHEMA=%d", fTrackSchema->GetSelected());
    args += TString::Format(" MODULE_EVENTS=%lld",    (Long64_t)fEvents->GetIntNumber());
    args += TString::Format(" MODULE_EPOCHS=%lld",    (Long64_t)fEpochs->GetIntNumber());
    args += TString::Format(" MODULE_JPARALLEL=%lld", (Long64_t)fJParallel->GetIntNumber());
@@ -547,15 +611,6 @@ void AlignConfigUI::OnSave()
    args += " MASTER_DATA_SCRIPT_DIR=" + Quote(fMasterDir->GetText());
    args += TString::Format(" WORKER_LAUNCH_STAGGER=%lld", (Long64_t)fStagger->GetIntNumber());
    args += " RUN_TAG=" + Quote(fRunTag->GetText());
-
-   if (args.Contains("=''") && moduleName.IsNull()) {
-      Log("module name is empty -- pick an archive on the Module tab");
-      return;
-   }
-   if (args.Contains(" =")) {          // Quote() returned empty: a value had a quote
-      Log("a value contains a single quote, which is not supported; remove it and retry");
-      return;
-   }
 
    LogCommand("save", Run(args));
    LogCommand("generate", Run("generate"));

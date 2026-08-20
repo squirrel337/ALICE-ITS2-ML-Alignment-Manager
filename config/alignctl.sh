@@ -43,15 +43,32 @@ case "$cmd" in
         *=*) ;;
         *) echo "not a KEY=VALUE pair: $pair" >&2; exit 2 ;;
       esac
-      ac_set "${pair%%=*}" "${pair#*=}" || exit 1
-      echo "set ${pair%%=*}"
     done
-    # Re-read so a change that breaks an invariant is reported immediately.
-    ac_load || exit 1
-    if ! ac_validate; then
-      echo "configuration is now invalid -- see above" >&2
+
+    # Every pair is applied to a scratch copy and the result validated there
+    # before anything is written back. Applying them straight to the file meant
+    # a bad third value left the first two committed and skipped validation
+    # altogether, so the file could end up in a state the tool would refuse to
+    # produce.
+    _conf=$(ac_conf_file)
+    _scratch=$(mktemp "${TMPDIR:-/tmp}/alignctl.XXXXXX") || exit 1
+    trap 'rm -f "$_scratch"' EXIT
+    cat "$_conf" > "$_scratch" || exit 1
+
+    _saved_conf=${ALIGN_CONF:-}
+    ALIGN_CONF="$_scratch"
+    for pair in "$@"; do
+      ac_set "${pair%%=*}" "${pair#*=}" || exit 1
+    done
+
+    if ! ( ac_load && ac_validate ); then
+      echo "nothing written: the result would be invalid" >&2
       exit 1
     fi
+    ALIGN_CONF=$_saved_conf
+
+    cat "$_scratch" > "$_conf" || exit 1
+    for pair in "$@"; do echo "set ${pair%%=*}"; done
     ;;
 
   validate)

@@ -208,12 +208,14 @@ struct YmWs {
 Bool_t LoadWeights(Option_t * filename, Network NetworkWeight, bool extended = true)
 {
    TString filen = filename;
-   Double_t w;
+   Double_t w = 0;
    if (filen == "") {
       Error("LoadWeights()","Invalid file name");
       return kFALSE;
    }
-   char *buff = new char[100];
+   // Four of the getline calls below pass 200 while this was allocated as 100.
+   const int kBuffLen = 256;
+   char *buff = new char[kBuffLen];
    std::ifstream input(filen.Data());
    
    
@@ -222,27 +224,28 @@ Bool_t LoadWeights(Option_t * filename, Network NetworkWeight, bool extended = t
       return kFALSE;
    }
    if (input.peek() == std::ifstream::traits_type::eof()) {
+      delete[] buff;
       return kFALSE; //empty
    }
    
    // input normalzation
-   input.getline(buff, 100);
+   input.getline(buff, kBuffLen);
    Float_t n1,n2;
    for(int lay=0; lay<nLAYER; lay++){
       input >> n1 >> n2;
       input >> n1 >> n2;         
    }
-   input.getline(buff, 200);
+   input.getline(buff, kBuffLen);
    // output normalization
-   input.getline(buff, 200);
+   input.getline(buff, kBuffLen);
    for(int lay=0; lay<nLAYER; lay++){
       input >> n1 >> n2;
       input >> n1 >> n2;         
       input >> n1 >> n2;               
    }
-   input.getline(buff, 200);
+   input.getline(buff, kBuffLen);
    // neuron weights
-   input.getline(buff, 200);
+   input.getline(buff, kBuffLen);
 
    int nentries = extended==false ? nW : nW + 6; 
    for(int ic = 0; ic < ChipBoundary[nLAYER]; ic++){
@@ -253,6 +256,16 @@ Bool_t LoadWeights(Option_t * filename, Network NetworkWeight, bool extended = t
          //NetworkWeight[ic][iw] = w;
       }
    }    
+   // Nothing above checks the stream. A file truncated part-way through the
+   // chip loop leaves every later read failing, and each failed read leaves w
+   // unchanged -- so the last value parsed was written into all remaining
+   // bins and the patch was still reported as good.
+   if (input.fail()) {
+      Error("LoadWeights()","%s is truncated or malformed (expected %d chips x %d columns)",
+            filen.Data(), ChipBoundary[nLAYER], nentries);
+      delete[] buff;
+      return kFALSE;
+   }
    delete[] buff;
    return kTRUE;
 }
@@ -293,9 +306,19 @@ Bool_t DumpWeights(Option_t * filename, Network NetworkWeight, bool extended = t
       }               
       *output<<std::endl;                                        
    } 
+   // Ask the stream before it is destroyed: a short write (a full disk) would
+   // otherwise produce a truncated parameter file reported as a success.
+   Bool_t writeFailed = kFALSE;
    if (filen != "-") {
       ((std::ofstream *) output)->close();
+      writeFailed = output->fail();
       delete output;
+   } else {
+      writeFailed = output->fail();
+   }
+   if (writeFailed) {
+      Error("DumpWeights()","writing %s failed; the merged parameters are incomplete", filen.Data());
+      return kFALSE;
    }
    return kTRUE;
 }
@@ -488,18 +511,38 @@ void WeightsMerge(int seed = 1){
 
    while (input) {
       input >> filename ;
-      std::cout<<"#"<<nSOURCEFILES<<" "<<filename<<std::endl;
-      if(filename!="") fSOURCEFILE.push_back(filename);
-      TString getIndex = filename;
-      getIndex.ReplaceAll("weights_n","");
-      getIndex.ReplaceAll(".txt","");
-      int weights_index = getIndex.Atoi();
-      fSOURCEINDEX.push_back(weights_index);
+      // The last pass through this loop is the one that hits end of file and
+      // leaves filename empty. Everything below must stay inside the guard:
+      // an empty name reduces to index 0 and would mark patch 0 present even
+      // when worker 0 produced nothing.
+      if(filename!=""){
+         std::cout<<"#"<<nSOURCEFILES<<" "<<filename<<std::endl;
+         fSOURCEFILE.push_back(filename);
+         TString getIndex = filename;
+         getIndex.ReplaceAll("weights_n","");
+         getIndex.ReplaceAll(".txt","");
+         if(getIndex.IsDigit()){
+            int weights_index = getIndex.Atoi();
+            if(weights_index >= 0 && weights_index < nPARALLEL){
+               fSOURCEINDEX.push_back(weights_index);
+            } else {
+               Error("WeightsMerge()","patch index %d from '%s' is outside 0..%d; ignored",
+                     weights_index, filename.Data(), nPARALLEL-1);
+            }
+         } else {
+            Error("WeightsMerge()","'%s' is not weights_nNNN.txt; ignored", filename.Data());
+         }
+         nSOURCEFILES++;
+      }
       filename="";
-      nSOURCEFILES++;
       if(nSOURCEFILES>=nPARALLEL) break;
    }
    delete[] buff;
+
+   if(nSOURCEFILES==0){
+      Error("WeightsMerge()","weights_step%d/ holds no weights_nNNN.txt; nothing to merge", seed);
+      gSystem->Exit(1);
+   }
 
    // patch information
    bool PATCHLIST[nPARALLEL];
@@ -527,11 +570,23 @@ void WeightsMerge(int seed = 1){
          if(PATCHLIST[p]==false) continue;
          std::cerr<<" Patch "<<p<<" Selected"<<std::endl;
          Network mNetwork(p);
-         LoadWeights(Form("weights_step%d/weights_n%03d.txt",seed,p),mNetwork,true);
+         if(!LoadWeights(Form("weights_step%d/weights_n%03d.txt",seed,p),mNetwork,true)){
+            // Pushing it anyway would merge an all-zero weight set and divide
+            // by a count that includes it.
+            Error("WeightsMerge()","patch %d could not be read; it is left out of the merge", p);
+            continue;
+         }
          NetworkWeights.push_back(mNetwork);
       }
+      if(NetworkWeights.size()==0){
+         Error("WeightsMerge()","no patch could be read; refusing to write a merged file");
+         gSystem->Exit(1);
+      }
+      std::cerr<<"Merging "<<NetworkWeights.size()<<" patch(es)"<<std::endl;
       MergeWeights(seed);
-      DumpWeights(Form("weights_merge_step%d.txt",seed),BaseNetworkWeight);
+      if(!DumpWeights(Form("weights_merge_step%d.txt",seed),BaseNetworkWeight)){
+         gSystem->Exit(1);
+      }
       NetworkWeights.clear();
    }
 }

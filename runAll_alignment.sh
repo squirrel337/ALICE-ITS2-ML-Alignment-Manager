@@ -50,7 +50,8 @@ say "data-prep in : ${AC_MASTER_DIR}"
 
 # Push the settings that live inside ROOT macros before anything reads them.
 ac_gen_datasetconfig "$AC_MASTER_DIR/DataSetConfig.h" || die "could not write DataSetConfig.h"
-say "wrote $AC_MASTER_DIR/DataSetConfig.h"
+ac_gen_dataschema   "$AC_MASTER_DIR/DataSchema.h"   || die "could not write DataSchema.h"
+say "wrote DataSetConfig.h and DataSchema.h (track schema ${TRACK_SCHEMA})"
 
 # DataRandomMerge.C stages its symlinks here and lists the directory to build
 # its file list; nothing else creates it.
@@ -72,7 +73,8 @@ say "unpacking the module into ${N_WORKERS} worker directories"
 for (( ns = 0; ns < N_WORKERS; ns++ )); do
   worker="${alignworker}/align_worker_${ns}"
   mkdir -p "$worker" || die "could not create $worker"
-  if [ ! -d "$worker/$modulename" ]; then
+  if [ ! -d "$worker/$modulename" ] || [ "$AC_MODULE_TGZ" -nt "$worker/$modulename" ]; then
+    rm -rf "$worker/$modulename"
     cp "$AC_MODULE_TGZ" "$worker/${modulename}.tgz" || die "could not copy the module archive"
     ( cd "$worker" && tar -zxf "${modulename}.tgz" ) || die "could not unpack the module in $worker"
   fi
@@ -92,14 +94,23 @@ for (( bcnt = 1; bcnt <= N_BATCHES; bcnt++ )); do
   end_step=$(( BASE_STEP + bcnt * STEPS_PER_BATCH ))
 
   say "=== batch ${bcnt}/${N_BATCHES}: steps ${start_step}..${end_step} from ${input_step} ==="
+  # Emptied, not just created: an archive left by an earlier attempt at this
+  # batch would otherwise be unpacked and merged as if it were from this one.
+  rm -rf "${resultcontainer}/result_step_${bcnt}"
   mkdir -p "${resultcontainer}/result_step_${bcnt}"
 
   # ---- stage 1: data preparation ----
   say "[1/4] preparing data"
   cd "$AC_MASTER_DIR" || die "cannot enter $AC_MASTER_DIR"
 
+  # Anything left here by an aborted run belongs to that run, not this one.
+  rm -f "alignment-input-data_${bcnt}.root" "MasterData_${bcnt}.lst"
+  rm -rf "step${bcnt}"
+
   root -l -b -q "DataRandomMerge.C(${bcnt},${DATA_MERGE_MAX_FILES})" \
        &> "alignment-input-data-merge.log.${bcnt}" || die "DataRandomMerge failed (batch ${bcnt})"
+  [ -s "alignment-input-data_${bcnt}.root" ] \
+    || die "batch ${bcnt}: the merge produced no alignment-input-data_${bcnt}.root (see alignment-input-data-merge.log.${bcnt})"
 
   root -l -b -q "DataSplit.C(${bcnt},${N_WORKERS},${BATCH_ID})" \
        &> "alignment-input-data-split.log.${bcnt}" || die "DataSplit failed (batch ${bcnt})"
@@ -114,6 +125,7 @@ for (( bcnt = 1; bcnt <= N_BATCHES; bcnt++ )); do
 
   # ---- stage 2: parallel training ----
   say "[2/4] launching ${N_WORKERS} workers"
+  worker_pid=()
   for (( ns = 0; ns < N_WORKERS; ns++ )); do
     workdir="${alignworker}/align_worker_${ns}/${modulename}"
     slice="${alignworker}/step${bcnt}/alignment-input-data-split${ns}.root"
@@ -134,11 +146,23 @@ for (( bcnt = 1; bcnt <= N_BATCHES; bcnt++ )); do
 
     ./process_all_master.sh "${TAG}" "${start_step}" "${end_step}" \
         > "${alignworker}/step${bcnt}/worker_${ns}.log" 2>&1 &
+    worker_pid[$ns]=$!
     sleep "${WORKER_LAUNCH_STAGGER}"
   done
 
+  # A bare `wait` discards every exit status, so a run that lost workers used
+  # to finish and report success. Wait on each pid and say which ones failed.
   say "[2/4] waiting for the workers"
-  wait
+  worker_failed=0
+  for (( ns = 0; ns < N_WORKERS; ns++ )); do
+    if ! wait "${worker_pid[$ns]}"; then
+      echo "  warning: worker ${ns} exited non-zero (see step${bcnt}/worker_${ns}.log)" >&2
+      worker_failed=$((worker_failed + 1))
+    fi
+  done
+  if [ "$worker_failed" -gt 0 ]; then
+    say "[2/4] ${worker_failed} of ${N_WORKERS} workers failed; the merge will use the rest"
+  fi
 
   # ---- collect ----
   for (( ns = 0; ns < N_WORKERS; ns++ )); do
@@ -162,6 +186,14 @@ for (( bcnt = 1; bcnt <= N_BATCHES; bcnt++ )); do
 
   # ---- stage 3: merge ----
   say "[3/4] merging worker weights"
+  # WeightsMerge.C merges whatever this directory contains, so a file left by a
+  # previous run -- or by a run with more workers -- would be averaged in.
+  rm -rf "${AC_MERGE_DIR}/weights_step${bcnt}"
+  # ...and the macro's own outputs, so the check below cannot pass on a file
+  # an interrupted earlier attempt at this batch left behind.
+  rm -f "${AC_MERGE_DIR}/weights_merge_step${bcnt}.txt" \
+        "${AC_MERGE_DIR}/weights_merge_${bcnt}.lst" \
+        "${AC_MERGE_DIR}/Monitor_MergeWeights_step${bcnt}.root"
   mkdir -p "${AC_MERGE_DIR}/weights_step${bcnt}"
 
   found=0
@@ -171,7 +203,15 @@ for (( bcnt = 1; bcnt <= N_BATCHES; bcnt++ )); do
 
     cd "${resultcontainer}/result_step_${bcnt}" || die "cannot enter the result container"
     rm -rf "MLPTrain_Step${end_step}" "MLPTrain_Step${end_step}-aw${ns}"
-    tar -zxf "$archive"
+    # A truncated archive used to unpack partially and be merged as zeros.
+    if ! tar -zxf "$archive"; then
+      echo "  warning: worker ${ns} archive is unreadable or truncated; left out of the merge" >&2
+      continue
+    fi
+    [ -d "MLPTrain_Step${end_step}" ] || {
+      echo "  warning: worker ${ns} archive holds no MLPTrain_Step${end_step}; left out of the merge" >&2
+      continue
+    }
     mv "MLPTrain_Step${end_step}" "MLPTrain_Step${end_step}-aw${ns}"
 
     # Newest weights_Epoch file: the last epoch the worker finished.
@@ -194,7 +234,7 @@ for (( bcnt = 1; bcnt <= N_BATCHES; bcnt++ )); do
   cd "$AC_MERGE_DIR" || die "cannot enter $AC_MERGE_DIR"
   root -l -b -q "WeightsMerge.C(${bcnt})" &> "alignment-params-merge.log.${bcnt}" \
     || die "WeightsMerge failed (batch ${bcnt})"
-  [ -f "weights_merge_step${bcnt}.txt" ] || die "WeightsMerge produced no weights_merge_step${bcnt}.txt"
+  [ -s "weights_merge_step${bcnt}.txt" ] || die "WeightsMerge produced no usable weights_merge_step${bcnt}.txt"
 
   mv "alignment-params-merge.log.${bcnt}"      "${alignworker}/step${bcnt}/"
   mv "Monitor_MergeWeights_step${bcnt}.root"   "${alignworker}/step${bcnt}/" 2>/dev/null

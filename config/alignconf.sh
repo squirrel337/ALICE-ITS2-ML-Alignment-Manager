@@ -17,6 +17,7 @@ DATA_FILES:list:data
 DATA_FILES_PER_BATCH:int:data
 DATA_MERGE_MAX_FILES:int:data
 MODULE_NAME:name:module
+TRACK_SCHEMA:enum:module
 MODULE_EVENTS:int:module
 MODULE_EPOCHS:int:module
 MODULE_JPARALLEL:int:module
@@ -67,6 +68,19 @@ ac_load() {
 
   # shellcheck disable=SC1090
   . "$f" || { ac_die "failed to source $f"; return 1; }
+
+  # ac_derive does arithmetic on several of these. Under `set -u` a missing key
+  # would abort the shell there with a bare "unbound variable" instead of a
+  # message naming the file and the key, so check they are all present first.
+  local k missing=""
+  for k in $(ac_keys); do
+    eval "[ \"\${$k+set}\" = set ]" || missing="$missing $k"
+  done
+  if [ -n "$missing" ]; then
+    ac_die "$f does not define:$missing"
+    return 1
+  fi
+
   AC_CONF_LOADED=1
   ac_derive
 }
@@ -83,9 +97,14 @@ ac_derive() {
   AC_MODULE_TGZ="$AC_ROOT/MODULE/${MODULE_NAME}.tgz"
   AC_REFERENCE_TGZ="$AC_ROOT/PARAMS/MLPTrain_Step${BASE_STEP}.tgz"
 
-  # Data-prep macros, overridable for a tree laid out somewhere else.
+  # Data-prep macros, overridable for a tree laid out somewhere else. A
+  # relative override is resolved against the repository root, not against
+  # whatever directory the driver happens to be in when it is used.
   if [ -n "$MASTER_DATA_SCRIPT_DIR" ]; then
-    AC_MASTER_DIR="$MASTER_DATA_SCRIPT_DIR"
+    case "$MASTER_DATA_SCRIPT_DIR" in
+      /*) AC_MASTER_DIR="$MASTER_DATA_SCRIPT_DIR" ;;
+      *)  AC_MASTER_DIR="$AC_ROOT/$MASTER_DATA_SCRIPT_DIR" ;;
+    esac
   else
     AC_MASTER_DIR="$AC_ROOT/RUN/MasterDataScript"
   fi
@@ -111,6 +130,14 @@ ac_validate() {
         if ! echo "$v" | grep -qE '^[0-9]+$'; then
           echo "  $k: expected a whole number, got '$v'" >&2; bad=1
         fi ;;
+      enum)
+        case "$k" in
+          TRACK_SCHEMA)
+            case "$v" in
+              2024|2025) ;;
+              *) echo "  $k: expected 2024 or 2025, got '$v'" >&2; bad=1 ;;
+            esac ;;
+        esac ;;
       dir|path|name)
         case "$v" in
           *'"'*) echo "  $k: must not contain a double quote" >&2; bad=1 ;;
@@ -164,6 +191,24 @@ ac_gen_ymlpparallel() {
   } > "$out"
 }
 
+# The track schema, for DataInputStructure.h and DataSplit.C. The 2025 input
+# tree carries a per-track charge field; the 2024 tree does not. Getting this
+# wrong is not a compile error -- it produces a tree the module misreads -- so
+# it is a generated define rather than a hand-edited one.
+ac_gen_dataschema() {
+   local out="$1" has_charge=0
+   [ "$TRACK_SCHEMA" = "2025" ] && has_charge=1
+   { _ac_banner
+     echo "#ifndef DATASCHEMA_H"
+     echo "#define DATASCHEMA_H"
+     echo
+     echo "#define ALIGN_TRACK_SCHEMA     $TRACK_SCHEMA"
+     echo "#define ALIGN_TRACK_HAS_CHARGE $has_charge"
+     echo
+     echo "#endif"
+   } > "$out"
+}
+
 # The data location and the file selection, for DataRandomMerge.C.
 ac_gen_datasetconfig() {
   local out="$1" f n=0
@@ -191,6 +236,8 @@ ac_gen_datasetconfig() {
 ac_generate() {
   ac_gen_datasetconfig "$AC_MASTER_DIR/DataSetConfig.h" || return 1
   echo "wrote $AC_MASTER_DIR/DataSetConfig.h"
+  ac_gen_dataschema "$AC_MASTER_DIR/DataSchema.h" || return 1
+  echo "wrote $AC_MASTER_DIR/DataSchema.h (track schema $TRACK_SCHEMA)"
   # YMLPParallel.h is written per worker at run time, once the module has
   # been unpacked; a copy here documents what the workers will receive.
   ac_gen_ymlpparallel "$AC_ROOT/config/YMLPParallel.h.generated" || return 1
@@ -220,7 +267,7 @@ ac_doctor() {
   if [ -d "$AC_MASTER_DIR/MasterData" ]; then
     _ac_ok "MasterData staging directory"
   else
-    _ac_bad "missing $AC_MASTER_DIR/MasterData -- DataRandomMerge.C needs it (mkdir it)"
+    _ac_bad "missing $AC_MASTER_DIR/MasterData -- it is tracked, so it was removed; restore it with 'git checkout -- $AC_MASTER_DIR/MasterData' or ./run_dir_maker.sh"
   fi
 
   # DataRandomMerge.C includes this; it is generated, not committed.
@@ -228,6 +275,33 @@ ac_doctor() {
     _ac_ok "DataSetConfig.h present"
   else
     _ac_bad "missing $AC_MASTER_DIR/DataSetConfig.h -- run 'alignctl.sh generate'"
+  fi
+  if [ -f "$AC_MASTER_DIR/DataSchema.h" ]; then
+    _ac_ok "DataSchema.h present"
+  else
+    _ac_bad "missing $AC_MASTER_DIR/DataSchema.h -- run 'alignctl.sh generate'"
+  fi
+
+  # The module and the split files must agree about the track schema. The
+  # module carries its own copy of the structure, so ask the archive rather
+  # than trusting the name.
+  if [ -f "$AC_MODULE_TGZ" ]; then
+    local mod_header mod_charge
+    mod_header=$(tar -xzOf "$AC_MODULE_TGZ" --wildcards '*/Ymlp/inc/DataInputStructure.h' 2>/dev/null)
+    if [ -z "$mod_header" ]; then
+      _ac_warn "could not read Ymlp/inc/DataInputStructure.h from the module archive; track schema not cross-checked"
+    else
+      if echo "$mod_header" | grep -qE '^[[:space:]]*int[[:space:]]+charge[[:space:]]*;'; then
+        mod_charge=2025
+      else
+        mod_charge=2024
+      fi
+      if [ "$mod_charge" = "$TRACK_SCHEMA" ]; then
+        _ac_ok "track schema $TRACK_SCHEMA matches the module archive"
+      else
+        _ac_bad "TRACK_SCHEMA is $TRACK_SCHEMA but the module archive expects $mod_charge -- the split files would be misread"
+      fi
+    fi
   fi
 
   echo "archives"
@@ -301,13 +375,21 @@ ac_set() {
   fi
 
   tmp=$(mktemp "${TMPDIR:-/tmp}/alignconf.XXXXXX") || return 1
-  awk -v key="$key" -v val="$val" '
+  # The value goes through the environment, not -v: awk applies escape-sequence
+  # processing to a -v assignment, so a value containing \t or \\ would arrive
+  # changed.
+  AC_SET_VALUE="$val" awk -v key="$key" '
+    BEGIN { val = ENVIRON["AC_SET_VALUE"] }
     skipping { if ($0 ~ /"/) skipping = 0; next }
     index($0, key "=") == 1 {
       line = $0
       n = gsub(/"/, "", line)
       print key "=\"" val "\""
-      if (n < 2) skipping = 1
+      # An odd number of quotes means the value is still open and continues on
+      # the following lines, so they belong to it and are replaced too. An even
+      # number -- including a value written without quotes at all -- means the
+      # line stands alone, and skipping past it would eat the next setting.
+      if (n % 2 == 1) skipping = 1
       found = 1
       next
     }

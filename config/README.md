@@ -50,6 +50,7 @@ by generating the files that hold them:
 | Setting | Lands in | Written when |
 |---|---|---|
 | `DATA_INPUT_DIR`, `DATA_FILES`, `DATA_FILES_PER_BATCH` | `RUN/MasterDataScript/DataSetConfig.h`, included by `DataRandomMerge.C` | `generate`, and at the start of every run |
+| `TRACK_SCHEMA` | `RUN/MasterDataScript/DataSchema.h`, included by `DataInputStructure.h` | `generate`, and at the start of every run |
 | `MODULE_EVENTS`, `MODULE_EPOCHS`, `MODULE_JPARALLEL`, `MODULE_CORES` | `YMLPParallel.h` inside each worker's unpacked module | After the module is unpacked, per worker |
 | everything else | read directly by `runAll_alignment.sh` | — |
 
@@ -69,6 +70,13 @@ run and the reference the `original-v20251024` tag points at.
 `DataRandomMerge.C` carries the one edit this required: it includes
 `DataSetConfig.h` instead of holding the directory and the file list inline.
 The commented history of earlier campaigns is still there.
+
+`DataInputStructure.h` and `DataSplit.C` carry the per-track `charge` field
+behind `#if ALIGN_TRACK_HAS_CHARGE`, which `DataSchema.h` sets from
+`TRACK_SCHEMA`. The field is the only difference between the 2024 and the 2025
+input tree, and choosing wrong is not a compile error -- it writes a tree the
+module misreads -- so `doctor` reads `Ymlp/inc/DataInputStructure.h` out of the
+selected module archive and fails if the two disagree.
 
 ## Adding a setting
 
