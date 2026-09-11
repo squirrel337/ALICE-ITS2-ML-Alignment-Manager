@@ -48,10 +48,40 @@ say "data-prep in : ${AC_MASTER_DIR}"
 [ -f "$AC_REFERENCE_TGZ" ] || die "no reference archive at $AC_REFERENCE_TGZ"
 [ -d "$AC_MASTER_DIR" ]    || die "no data-prep macro directory at $AC_MASTER_DIR"
 
+# --- what the archive is, and whether every module knob applies to it ------
+
+# The headers are read out of the archive into a scratch copy and the knobs
+# tried on it exactly as they will be applied to each worker, so an archive
+# packed wrongly, a schema mismatch or a knob this module does not have
+# stops the run here rather than after the data preparation.
+ac_resolve_schema || die "could not resolve the track schema"
+probe=$(mktemp -d "${TMPDIR:-/tmp}/alignprobe.XXXXXX") || die "cannot create a scratch directory"
+ac_probe "$AC_MODULE_TGZ" "$probe" || die "could not read the module headers out of $AC_MODULE_TGZ"
+proberoot=$AC_PROBE_ROOT
+archivetop=$(mp_archive_top "$AC_MODULE_TGZ")
+[ "$MP_VALID" -eq 1 ] \
+  || die "$AC_MODULE_TGZ does not look like an alignment module (no YMLPParallel.h, Ymlp/inc or run_train_circle.C under ${archivetop}/)"
+[ "$archivetop" = "$modulename" ] \
+  || die "the archive unpacks to '${archivetop}/' but MODULE_NAME is '${modulename}'; repack it as: tar czf ${modulename}.tgz ${modulename}"
+[ "$AC_TRACK_SCHEMA" = "$MP_SCHEMA" ] \
+  || die "TRACK_SCHEMA=${TRACK_SCHEMA} resolves to ${AC_TRACK_SCHEMA}, but the module reads the ${MP_SCHEMA} input tree"
+if [ "$GEOM_BACKEND" = cache ] && ! mp_archive_member "$AC_MODULE_TGZ" "$archivetop" "$MP_GEOMCACHE" >/dev/null; then
+  die "GEOM_BACKEND is cache, but the archive holds no ${archivetop}/${MP_GEOMCACHE}; build it with the module's tools/export_geometry_cache.C and repack, or set GEOM_BACKEND=o2"
+fi
+mp_apply "$proberoot" || die "the module knobs in the configuration do not apply to this archive (see above)"
+say "module       : generation ${MP_GENERATION}, input schema ${MP_SCHEMA}, backend ${GEOM_BACKEND}"
+if [ -n "$MP_APPLIED" ]; then
+  say "module knobs :"
+  printf '%s' "$MP_APPLIED" | sed 's/^/                 /'
+else
+  say "module knobs : none -- the archive trains as shipped"
+fi
+rm -rf "$probe"
+
 # Push the settings that live inside ROOT macros before anything reads them.
 ac_gen_datasetconfig "$AC_MASTER_DIR/DataSetConfig.h" || die "could not write DataSetConfig.h"
 ac_gen_dataschema   "$AC_MASTER_DIR/DataSchema.h"   || die "could not write DataSchema.h"
-say "wrote DataSetConfig.h and DataSchema.h (track schema ${TRACK_SCHEMA})"
+say "wrote DataSetConfig.h and DataSchema.h (track schema ${AC_TRACK_SCHEMA}, from TRACK_SCHEMA=${TRACK_SCHEMA})"
 
 # DataRandomMerge.C stages its symlinks here and lists the directory to build
 # its file list; nothing else creates it.
@@ -82,6 +112,13 @@ for (( ns = 0; ns < N_WORKERS; ns++ )); do
   # unpacked copy is the only way to set it without rebuilding the archive.
   ac_gen_ymlpparallel "$worker/$modulename/YMLPParallel.h" \
     || die "could not write YMLPParallel.h in $worker"
+  # The other knobs are patched into the unpacked copy the same way. The
+  # archive's own copy of every patchable file goes back first, so a knob at
+  # keep is the archive's value even in a worker an earlier run patched, and
+  # what was done is recorded beside the worker's copy of the archive.
+  mp_restore "$AC_MODULE_TGZ" "$worker" || die "could not restore the module files in $worker"
+  mp_apply "$worker/$modulename"        || die "could not patch the module in $worker"
+  mp_manifest "$worker/module_patch_manifest.txt" "$AC_MODULE_TGZ" "$worker/$modulename"
 done
 say "each worker has nDATA=${MODULE_EVENTS} nEPOCH=${MODULE_EPOCHS} nCORE=${MODULE_CORES}"
 

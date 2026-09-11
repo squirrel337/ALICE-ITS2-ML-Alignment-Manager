@@ -23,9 +23,14 @@ parallelism, and the manager knows nothing about the cost function.
 | **`ALICE-ITS2-ML-Alignment-Manager`** | Batch driver, data preparation, weight merging, configuration | Checked out and run |
 | `ALICE-ITS2-ML-Alignment-2024` | Alignment module, vertex taken from reconstruction | `MODULE/<name>.tgz` |
 | `ALICE-ITS2-ML-Alignment-2025` | Alignment module, vertex re-estimated from ITS tracks | `MODULE/<name>.tgz` |
+| `ALICE-ITS2-ML-Alignment-2026` | Alignment module, detector-unit pooling, layer selection, optional cached geometry | `MODULE/<name>.tgz` |
 
 The source trees are consumed as frozen tar archives, never edited in place.
-Which one is in use is a single string in the configuration.
+Which one is in use is a single string in the configuration. The manager
+reads what a given archive can do (input schema, learning methods, detector
+units, layer selection, geometry backends) out of the archive itself, so one
+configuration format drives all three generations; `./config/alignctl.sh
+inspect` prints that report.
 
 Both module repositories carry a full description of their internals in
 `docs/workflow.html` — cost function, vertex constraint, optimisation loop,
@@ -72,7 +77,9 @@ fan-out and the parameter handoff.
 
 - Linux; developed and run on **CentOS 7**
 - **O2** with its ROOT 6 (`alienv load O2/latest`) — the committed default is
-  `/home/alice/Software/v20230501`
+  `/home/alice/Software/v20230501`. Needed whatever the module's geometry
+  backend: the manager's own data split and weight merge use O2's geometry;
+  a 2026 module's cache backend only takes O2 out of the workers.
 - bash 4.2 or newer
 - For the configuration window: ROOT with GUI support and an X display
   (`ssh -X` is sufficient). No other dependency.
@@ -122,21 +129,23 @@ boxes, so holding back a verification sample is a click rather than a
 commented-out line. It writes nothing itself — Save shells out to
 `alignctl.sh`, so the command line and the GUI cannot disagree.
 
-Two settings cannot be read from a shell file by the code that needs them, so
-they are generated:
+Some settings cannot be read from a shell file by the code that needs them, so
+they are generated or patched in:
 
 | Setting | Reaches the code as |
 |---|---|
 | Input directory, file selection | `RUN/MasterDataScript/DataSetConfig.h`, included by `DataRandomMerge.C` |
+| Track schema (`auto`, 2024, 2025, 2026) | `RUN/MasterDataScript/DataSchema.h`, included by `DataInputStructure.h` |
 | Events, epochs, cores, `jparallel` | `YMLPParallel.h`, overwritten in each worker's unpacked module |
+| Learning method, `DULEVEL`, layers, geometry backend, cut windows, learning-rate constants, vertex thresholds (`MODULE_*`, `GEOM_BACKEND`) | Rewritten in place in each worker's unpacked `DetectorConstant.h`, `YMultiLayerPerceptron.cxx`, `run_train_circle.C`, `YDetectorGeometry.h` |
 
-The module's job size is a set of preprocessor defines inside the frozen
-archive. Overwriting that header in the worker's copy after unpacking is the
-only way to change it without repacking; the archive in `MODULE/` is never
-modified. **Note that this covers job size only** — the module's physics
-configuration (cut thresholds, learning rate, resolution coefficients) still
-lives in preprocessor defines inside the source tree and requires a rebuilt
-archive to change.
+The module's configuration is a set of preprocessor defines and file-scope
+constants inside the frozen archive. Rewriting them in the worker's copy after
+unpacking is the only way to change them without repacking; the archive in
+`MODULE/` is never modified. Every `MODULE_*` knob defaults to `keep`, which
+leaves the archive's own value untouched, and a knob the selected module does
+not have is refused before anything is launched. Each worker directory records
+what was patched in `module_patch_manifest.txt`.
 
 ---
 

@@ -9,6 +9,7 @@
 #    alignctl.sh validate             check types and relationships
 #    alignctl.sh doctor               check this machine has what the run needs
 #    alignctl.sh generate             write the generated headers
+#    alignctl.sh inspect [ARCHIVE]    what the module archive has and holds
 #    alignctl.sh keys                 list every key
 #    alignctl.sh ui                   open the ROOT configuration window
 # ==========================================================================
@@ -17,7 +18,7 @@ set -u
 _here=$(cd "$(dirname "$0")" && pwd)
 . "$_here/alignconf.sh"
 
-usage() { sed -n '3,17p' "$0" | sed 's/^#[ ]\{0,2\}//'; }
+usage() { sed -n '3,18p' "$0" | sed 's/^#[ ]\{0,2\}//'; }
 
 cmd=${1:-show}
 [ $# -gt 0 ] && shift
@@ -26,6 +27,9 @@ case "$cmd" in
 
   show)
     ac_load || exit 1
+    # With TRACK_SCHEMA=auto the resolved value is worth showing, but a
+    # missing archive is doctor's finding, not a reason show cannot run.
+    ac_resolve_schema 2>/dev/null
     ac_print
     ;;
 
@@ -86,6 +90,12 @@ case "$cmd" in
     ac_load || exit 1
     ac_validate || { echo "refusing to generate from an invalid configuration" >&2; exit 1; }
     ac_generate
+    ;;
+
+  inspect)
+    [ $# -le 1 ] || { echo "usage: alignctl.sh inspect [ARCHIVE]" >&2; exit 2; }
+    ac_load || exit 1
+    ac_inspect "$@"
     ;;
 
   keys)
