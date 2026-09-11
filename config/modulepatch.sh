@@ -110,7 +110,8 @@ mp_archive_top() {    # archive -> top directory name
 # The member name for one path inside the tree, exactly as the archive
 # spells it, or nothing if it is absent.
 mp_archive_member() { # archive top relpath -> member name
-  mp_archive_list "$1" | grep -x -m1 -e "$2/$3" -e "./$2/$3"
+  # Fixed strings: module names carry '.' and '+', which a pattern would read.
+  mp_archive_list "$1" | grep -F -x -m1 -e "$2/$3" -e "./$2/$3"
 }
 
 # Extracts the probe files into DESTDIR and prints the tree root
