@@ -23,7 +23,7 @@ parallelism, and the manager knows nothing about the cost function.
 | **`ALICE-ITS2-ML-Alignment-Manager`** | Batch driver, data preparation, weight merging, configuration | Checked out and run |
 | `ALICE-ITS2-ML-Alignment-2024` | Alignment module, vertex taken from reconstruction | `MODULE/<name>.tgz` |
 | `ALICE-ITS2-ML-Alignment-2025` | Alignment module, vertex re-estimated from ITS tracks | `MODULE/<name>.tgz` |
-| `ALICE-ITS2-ML-Alignment-2026` | Alignment module, detector-unit pooling, layer selection, optional cached geometry | `MODULE/<name>.tgz` |
+| `alice-its2-ml-alignment-2026` | Alignment module, detector-unit pooling, layer selection, optional cached geometry | `MODULE/<name>.tgz` |
 
 The source trees are consumed as frozen tar archives, never edited in place.
 Which one is in use is a single string in the configuration. The manager
@@ -32,7 +32,7 @@ units, layer selection, geometry backends) out of the archive itself, so one
 configuration format drives all three generations; `./config/alignctl.sh
 inspect` prints that report.
 
-Both module repositories carry a full description of their internals in
+All three module repositories carry a full description of their internals in
 `docs/workflow.html` — cost function, vertex constraint, optimisation loop,
 and how weights become alignment parameters.
 
@@ -142,10 +142,11 @@ they are generated or patched in:
 The module's configuration is a set of preprocessor defines and file-scope
 constants inside the frozen archive. Rewriting them in the worker's copy after
 unpacking is the only way to change them without repacking; the archive in
-`MODULE/` is never modified. Every `MODULE_*` knob defaults to `keep`, which
-leaves the archive's own value untouched, and a knob the selected module does
-not have is refused before anything is launched. Each worker directory records
-what was patched in `module_patch_manifest.txt`.
+`MODULE/` is never modified. Every patch knob (`MODULE_LEARNING_METHOD`,
+`MODULE_DULEVEL`, `MODULE_LAYERS` and the `[tuning]` keys) defaults to `keep`,
+which leaves the archive's own value untouched, and a knob the selected module
+does not have is refused before anything is launched. Each worker directory
+records what was patched in `module_patch_manifest.txt`.
 
 ---
 

@@ -450,9 +450,38 @@ ac_probe() {          # archive scratchdir
   AC_PROBE_ROOT=""
   # Warm the member-list cache in this shell; the extraction below runs in
   # a subshell and would otherwise leave it to be read a second time.
-  mp_archive_list "$1" >/dev/null || return 1
+  mp_archive_list "$1" >/dev/null || { mp_die "cannot list $1: ${MP_LIST_ERR:-not a readable gzip tar archive}"; return 1; }
   AC_PROBE_ROOT=$(mp_probe_extract "$1" "$2") || { AC_PROBE_ROOT=""; return 1; }
   mp_inspect "$AC_PROBE_ROOT"
+}
+
+# The knobs that have a relation to another value, checked with the
+# archive's own value on any side left at keep. One message per line on
+# stdout, nothing when all is well. Needs mp_inspect to have run; doctor
+# reports these as failures and the driver refuses to start on them.
+ac_relation_errors() {
+  local ptmin ptmax a b c s d
+  ptmin=$MODULE_PT_MIN; [ "$ptmin" = keep ] && ptmin=$MP_MOD_PT_MIN
+  ptmax=$MODULE_PT_MAX; [ "$ptmax" = keep ] && ptmax=$MP_MOD_PT_MAX
+  if [ -n "$ptmin" ] && [ -n "$ptmax" ] && ! awk -v lo="$ptmin" -v hi="$ptmax" 'BEGIN{exit !(lo+0 < hi+0)}'; then
+    echo "pT window [$ptmin, $ptmax] is empty -- MODULE_PT_MIN/MODULE_PT_MAX against the archive's own values"
+  fi
+  a=$MODULE_CHI_IB_TRAIN; [ "$a" = keep ] && a=$MP_MOD_CHI_IB_TRAIN
+  b=$MODULE_CHI_IB;       [ "$b" = keep ] && b=$MP_MOD_CHI_IB
+  if [ -n "$a" ] && [ -n "$b" ] && awk -v a="$a" -v b="$b" 'BEGIN{exit !(a+0 > b+0)}'; then
+    echo "RANGE_CHI_IB_TRAINING ($a) would be looser than RANGE_CHI_IB ($b); the update would accept hits the cost rejects"
+  fi
+  a=$MODULE_CHI_OB_TRAIN; [ "$a" = keep ] && a=$MP_MOD_CHI_OB_TRAIN
+  b=$MODULE_CHI_OB;       [ "$b" = keep ] && b=$MP_MOD_CHI_OB
+  if [ -n "$a" ] && [ -n "$b" ] && awk -v a="$a" -v b="$b" 'BEGIN{exit !(a+0 > b+0)}'; then
+    echo "RANGE_CHI_OB_TRAINING ($a) would be looser than RANGE_CHI_OB ($b)"
+  fi
+  c=$MODULE_ETA_CONSTANT; [ "$c" = keep ] && c=$MP_MOD_ETA_CONSTANT
+  s=$MODULE_ETA_SCALE;    [ "$s" = keep ] && s=$MP_MOD_ETA_SCALE
+  d=$MODULE_ETA_DETRES;   [ "$d" = keep ] && d=$MP_MOD_ETA_DETRES
+  if [ -n "$c" ] && [ -n "$s" ] && [ -n "$d" ] && ! awk -v c="$c" -v s="$s" -v d="$d" 'BEGIN{exit !(c * s * (d*1e-4)^2 > 0)}'; then
+    echo "the effective eta is zero or below (constant $c, scale $s, DETRES $d); nothing would be learned"
+  fi
 }
 
 # The capability report for `alignctl.sh inspect [ARCHIVE]`: NAME=value
@@ -464,10 +493,18 @@ ac_inspect() {        # [archive]
     mp_reset
     echo "MP_ARCHIVE=$a"
     echo "MP_ERROR=no archive at $a"
+    echo "MP_TOP="; echo "MP_TOP_OK=0"; echo "MP_CACHE_FILE=0"
     mp_report
     return 1
   fi
-  probe=$(mktemp -d "${TMPDIR:-/tmp}/alignprobe.XXXXXX") || return 1
+  if ! probe=$(mktemp -d "${TMPDIR:-/tmp}/alignprobe.XXXXXX"); then
+    mp_reset
+    echo "MP_ARCHIVE=$a"
+    echo "MP_ERROR=cannot create a scratch directory under ${TMPDIR:-/tmp}"
+    echo "MP_TOP="; echo "MP_TOP_OK=0"; echo "MP_CACHE_FILE=0"
+    mp_report
+    return 1
+  fi
   if ! ac_probe "$a" "$probe" 2>"$probe/probe.err"; then
     err=$(tr '\n' ' ' < "$probe/probe.err")
     rc=1
@@ -500,7 +537,7 @@ _ac_bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; AC_DOCTOR_FAIL=$(( ${AC_
 # The module section of doctor, once the archive has been read. Everything
 # here is gated on MP_VALID by the caller.
 _ac_doctor_module() { # treeroot scratchdir
-  local root="$1" probe="$2" top line eff_method eff_dulevel eff_mask lm ptmin ptmax a b c s d
+  local root="$1" probe="$2" top line eff_method eff_dulevel eff_mask geom_ok=1 ptmin ptmax a b c s d
   top=$(mp_archive_top "$AC_MODULE_TGZ")
 
   # The driver unpacks the archive and enters MODULE_NAME/.
@@ -522,6 +559,10 @@ _ac_doctor_module() { # treeroot scratchdir
     _ac_ok "track schema auto -> $AC_TRACK_SCHEMA (read from the archive)"
   elif [ "$AC_TRACK_SCHEMA" = "$MP_SCHEMA" ]; then
     _ac_ok "track schema $TRACK_SCHEMA (resolved $AC_TRACK_SCHEMA) matches the module archive"
+    # 2025 and 2026 read the same tree, so the year cannot be checked through
+    # the schema; say so when it disagrees with what the archive looks like.
+    [ "$TRACK_SCHEMA" = "$MP_GENERATION" ] || \
+      _ac_warn "TRACK_SCHEMA says $TRACK_SCHEMA but the archive looks like a $MP_GENERATION-generation module -- same input tree, so harmless; check MODULE_NAME is the archive you meant"
   else
     _ac_bad "TRACK_SCHEMA is $TRACK_SCHEMA (resolved $AC_TRACK_SCHEMA) but the module archive expects $MP_SCHEMA -- the split files would be misread"
   fi
@@ -538,9 +579,12 @@ _ac_doctor_module() { # treeroot scratchdir
         _ac_ok "backend o2 (the only backend this tree has; its header is left untouched)"
       fi ;;
     cache)
+      # An O2-only tree is reported by the knob check below (mp_apply refuses
+      # it); here only what that check cannot see.
       if [ "$MP_CACHE_CAPABLE" -ne 1 ]; then
-        _ac_bad "GEOM_BACKEND is cache, but this module only has the O2 backend; use o2"
+        geom_ok=0
       elif ! mp_archive_member "$AC_MODULE_TGZ" "$top" "$MP_GEOMCACHE" >/dev/null; then
+        geom_ok=0
         _ac_bad "no $top/$MP_GEOMCACHE in the archive -- geometry/ is gitignored in the 2026 tree; run tools/export_geometry_cache.C in the tree and repack, or set GEOM_BACKEND=o2"
       else
         _ac_ok "backend cache -- $MP_GEOMCACHE travels in the archive; workers read it instead of O2"
@@ -550,10 +594,12 @@ _ac_doctor_module() { # treeroot scratchdir
         if command -v root >/dev/null 2>&1; then
           mp_probe_extract_cache "$AC_MODULE_TGZ" "$probe" 2>/dev/null
           local cfp="" ffp=""
-          cfp=$(root -l -b -q -e "auto f=TFile::Open(\"$root/$MP_GEOMCACHE\"); auto o=f?(TNamed*)f->Get(\"alignfingerprint\"):0; printf(\"AC_FP %s\\n\", o?o->GetTitle():\"\")" 2>/dev/null | sed -n 's/^AC_FP //p')
+          cfp=$(root -l -b -q -e "auto f=TFile::Open(\"$root/$MP_GEOMCACHE\"); auto o=f?(TNamed*)f->Get(\"alignfingerprint\"):0; printf(\"AC_FP %s\\n\", f?(o?o->GetTitle():\"none\"):\"unreadable\")" 2>/dev/null | sed -n 's/^AC_FP //p')
           [ -f "$root/$MP_FPTOOL" ] && [ -f "$root/$MP_ALIGNFILE" ] && \
             ffp=$(root -l -b -q "$root/$MP_FPTOOL(\"$root/$MP_ALIGNFILE\")" 2>/dev/null | sed -n 's/^ALIGN_FP //p')
-          if [ -z "$cfp" ]; then
+          if [ -z "$cfp" ] || [ "$cfp" = unreadable ]; then
+            _ac_warn "root could not open the archive's $MP_GEOMCACHE; cache staleness unchecked"
+          elif [ "$cfp" = none ]; then
             _ac_warn "the cache carries no alignment fingerprint -- rebuild it with tools/export_geometry_cache.C to enable the staleness check"
           elif [ -z "$ffp" ] || [ "$ffp" = unreadable ]; then
             _ac_warn "cannot fingerprint the archive's $MP_ALIGNFILE; cache staleness unchecked"
@@ -566,7 +612,7 @@ _ac_doctor_module() { # treeroot scratchdir
           _ac_warn "cache staleness unchecked (root not on PATH)"
         fi
       fi
-      _ac_ok "O2 is still loaded for the run: DataSplit.C and WeightsMerge.C need it whatever the worker's backend" ;;
+      [ "$geom_ok" -eq 1 ] && _ac_ok "O2 is still loaded for the run: DataSplit.C and WeightsMerge.C need it whatever the worker's backend" ;;
   esac
 
   # Every knob that is not keep, tried on the scratch copy exactly as the
@@ -585,57 +631,42 @@ EOF
   fi
 
   # What the run will actually use, for the interaction checks: the
-  # configured value where one is given, the archive's own otherwise.
+  # configured value where one is given, the archive's own otherwise. Both
+  # knobs act in MLP_BatchArr, which kBatch and kSteepestDescent go through
+  # and kStochastic does not.
   eff_method=$MODULE_LEARNING_METHOD; [ "$eff_method" = keep ] && eff_method=$MP_MOD_METHOD
   eff_dulevel=$MODULE_DULEVEL;        [ "$eff_dulevel" = keep ] && eff_dulevel=${MP_MOD_DULEVEL:-5}
-  if [ "$MODULE_LAYERS" != keep ]; then eff_mask=$(mp_layers_mask "$MODULE_LAYERS")
-  elif [ "$MP_LAYER_SELECT" -eq 1 ]; then eff_mask=$(( MP_MOD_LAYER_MASK ))
-  else eff_mask=120; fi
   if [ "$MP_DETECTOR_UNIT" -eq 1 ]; then
     _ac_ok "DULEVEL $eff_dulevel ($(mp_dulevel_name "$eff_dulevel")) -- the unit one set of six parameters is pooled over"
-    case "$eff_method" in
-      kBatch|kBatchDetectorUnitUser) ;;
-      *) [ "$eff_dulevel" = 5 ] || _ac_warn "DULEVEL $eff_dulevel has no effect under $eff_method -- pooling a unit needs a batch step; use kBatch" ;;
-    esac
+    if ! mp_is_batch_method "$eff_method" && [ "$eff_dulevel" != 5 ]; then
+      _ac_warn "DULEVEL $eff_dulevel has no effect under $eff_method -- pooling a unit needs the batch update (kBatch or kSteepestDescent)"
+    fi
   fi
   if [ "$MP_LAYER_SELECT" -eq 1 ]; then
+    if [ "$MODULE_LAYERS" != keep ]; then eff_mask=$(mp_layers_mask "$MODULE_LAYERS"); else eff_mask=$(( MP_MOD_LAYER_MASK )); fi
     _ac_ok "layers $(mp_mask_layers "$eff_mask") ($(mp_layers_preset "$eff_mask")) -- $(mp_layers_sensors "$eff_mask") of 24120 chips aligned, mask $(printf '0x%02X' "$eff_mask"); chips outside are averaged through the merge unchanged"
-    case "$eff_method" in
-      kBatch|kBatchDetectorUnitUser) ;;
-      *) _ac_warn "layers have no effect under $eff_method -- the mask gates the batch path only; kStochastic updates all seven layers" ;;
-    esac
+    if ! mp_is_batch_method "$eff_method"; then
+      _ac_warn "layers have no effect under $eff_method -- the mask gates the batch update (kBatch, kSteepestDescent); kStochastic updates all seven layers"
+    fi
   fi
 
-  # Relations between a configured value and the archive's own.
+  # Relations between a configured value and the archive's own; the driver
+  # refuses to start on the same list.
+  while IFS= read -r line; do [ -n "$line" ] && _ac_bad "$line"; done <<EOF
+$(ac_relation_errors)
+EOF
   ptmin=$MODULE_PT_MIN; [ "$ptmin" = keep ] && ptmin=$MP_MOD_PT_MIN
   ptmax=$MODULE_PT_MAX; [ "$ptmax" = keep ] && ptmax=$MP_MOD_PT_MAX
-  if [ -n "$ptmin" ] && [ -n "$ptmax" ]; then
-    awk -v lo="$ptmin" -v hi="$ptmax" 'BEGIN{exit !(lo+0 < hi+0)}' \
-      && _ac_ok "pT window [$ptmin, $ptmax] GeV/c" \
-      || _ac_bad "pT window [$ptmin, $ptmax] is empty -- MODULE_PT_MIN/MODULE_PT_MAX against the archive's own values"
-  fi
-  a=$MODULE_CHI_IB_TRAIN; [ "$a" = keep ] && a=$MP_MOD_CHI_IB_TRAIN
-  b=$MODULE_CHI_IB;       [ "$b" = keep ] && b=$MP_MOD_CHI_IB
-  if [ -n "$a" ] && [ -n "$b" ] && awk -v a="$a" -v b="$b" 'BEGIN{exit !(a+0 > b+0)}'; then
-    _ac_bad "RANGE_CHI_IB_TRAINING ($a) would be looser than RANGE_CHI_IB ($b)"
-  fi
-  a=$MODULE_CHI_OB_TRAIN; [ "$a" = keep ] && a=$MP_MOD_CHI_OB_TRAIN
-  b=$MODULE_CHI_OB;       [ "$b" = keep ] && b=$MP_MOD_CHI_OB
-  if [ -n "$a" ] && [ -n "$b" ] && awk -v a="$a" -v b="$b" 'BEGIN{exit !(a+0 > b+0)}'; then
-    _ac_bad "RANGE_CHI_OB_TRAINING ($a) would be looser than RANGE_CHI_OB ($b)"
-  fi
+  [ -n "$ptmin" ] && [ -n "$ptmax" ] && awk -v lo="$ptmin" -v hi="$ptmax" 'BEGIN{exit !(lo+0 < hi+0)}' \
+    && _ac_ok "pT window [$ptmin, $ptmax] GeV/c"
   c=$MODULE_ETA_CONSTANT; [ "$c" = keep ] && c=$MP_MOD_ETA_CONSTANT
   s=$MODULE_ETA_SCALE;    [ "$s" = keep ] && s=$MP_MOD_ETA_SCALE
   d=$MODULE_ETA_DETRES;   [ "$d" = keep ] && d=$MP_MOD_ETA_DETRES
-  if [ -n "$c" ] && [ -n "$s" ] && [ -n "$d" ]; then
-    if awk -v c="$c" -v s="$s" -v d="$d" 'BEGIN{exit !(c * s * (d*1e-4)^2 > 0)}'; then
-      _ac_ok "eta $(awk -v c="$c" -v s="$s" -v d="$d" 'BEGIN{printf "%.6g", c * s * (d*1e-4)^2}') (constant $c, scale $s, DETRES $d um)"
-    else
-      _ac_bad "the effective eta is zero or below (constant $c, scale $s, DETRES $d)"
-    fi
-  fi
+  [ -n "$c" ] && [ -n "$s" ] && [ -n "$d" ] && awk -v c="$c" -v s="$s" -v d="$d" 'BEGIN{exit !(c * s * (d*1e-4)^2 > 0)}' \
+    && _ac_ok "eta $(awk -v c="$c" -v s="$s" -v d="$d" 'BEGIN{printf "%.6g", c * s * (d*1e-4)^2}') (constant $c, scale $s, DETRES $d um)"
   a=$MODULE_DET_MAG; [ "$a" = keep ] && a=$MP_MOD_DET_MAG
-  [ -n "$a" ] && _ac_ok "DET_MAG $a T, nTrackMax $([ "$MODULE_NTRACKMAX" = keep ] && echo "$MP_MOD_NTRACKMAX" || echo "$MODULE_NTRACKMAX")"
+  b=$MODULE_NTRACKMAX; [ "$b" = keep ] && b=$MP_MOD_NTRACKMAX
+  [ -n "$a" ] && _ac_ok "DET_MAG $a T, nTrackMax $b"
 
   # Every step reseeds from the base archive with only weights.txt replaced,
   # so weightsDU.txt and UpdateSensorsList.txt are always the reference's.
@@ -644,7 +675,7 @@ EOF
       if tar -tzf "$AC_REFERENCE_TGZ" 2>/dev/null | grep -q '/weights/weightsDU\.txt$'; then
         _ac_ok "this tree reloads weights/weightsDU.txt each step; the reference archive carries it (reseeded from there every batch)"
       else
-        _ac_warn "this tree reloads weights/weightsDU.txt each step, but the reference archive has none -- detector-unit normalisations stay uninitialised and the cost comes out -nan"
+        _ac_warn "this tree reloads weights/weightsDU.txt each step, but the reference archive has none -- the module reads it from a stream that failed to open (the 2026 console's doctor reports the cost then comes out -nan)"
       fi
     fi
   else
@@ -690,13 +721,14 @@ ac_doctor() {
                              || _ac_bad "no reference archive at $AC_REFERENCE_TGZ"
   if [ -f "$AC_MODULE_TGZ" ]; then
     _ac_ok "module archive $MODULE_NAME.tgz"
-    probe=$(mktemp -d "${TMPDIR:-/tmp}/alignprobe.XXXXXX")
-    if ac_probe "$AC_MODULE_TGZ" "$probe" 2>"$probe/probe.err" && [ "$MP_VALID" -eq 1 ]; then
+    if ! probe=$(mktemp -d "${TMPDIR:-/tmp}/alignprobe.XXXXXX"); then
+      _ac_bad "cannot create a scratch directory under ${TMPDIR:-/tmp}; the archive was not inspected"
+    elif ac_probe "$AC_MODULE_TGZ" "$probe" 2>"$probe/probe.err" && [ "$MP_VALID" -eq 1 ]; then
       _ac_doctor_module "$AC_PROBE_ROOT" "$probe"
     else
-      _ac_bad "could not read the module headers out of the archive: $(tr '\n' ' ' < "$probe/probe.err" 2>/dev/null) -- is it a tarball of $MODULE_NAME/ with YMLPParallel.h, Ymlp/inc, Ymlp/src and run_train_circle.C inside?"
+      _ac_bad "could not read the module out of the archive: $(sed 's/^modulepatch: //' "$probe/probe.err" 2>/dev/null | tr '\n' ' ')"
     fi
-    rm -rf "$probe"
+    [ -n "$probe" ] && rm -rf "$probe"
   else
     _ac_bad "no module archive at $AC_MODULE_TGZ"
     [ "$TRACK_SCHEMA" = auto ] && _ac_bad "TRACK_SCHEMA is auto, which needs the archive to resolve; generate and the driver will refuse until it is there"
@@ -732,8 +764,11 @@ ac_doctor() {
   fi
 
   echo
-  est=$(mp_estimate "$MODULE_EVENTS" "$MODULE_EPOCHS")
-  [ -n "$est" ] && echo "estimated training  ~${est} min per step per worker, ~$(( est * STEPS_PER_BATCH * N_BATCHES )) min for the run (fit on the 2026 module; data preparation and merges extra)"
+  # The runtime fit is the 2026 console's, for that module only.
+  if [ "${MP_GENERATION:-}" = 2026 ]; then
+    est=$(mp_estimate "$MODULE_EVENTS" "$MODULE_EPOCHS")
+    [ -n "$est" ] && echo "estimated training  ~$(mp_minutes_text "$est") per step per worker, ~$(mp_minutes_text $(( est * STEPS_PER_BATCH * N_BATCHES ))) for the run (fit on the 2026 module; data preparation and merges extra)"
+  fi
   echo "$AC_DOCTOR_FAIL failed, $AC_DOCTOR_WARN warnings"
   [ "$AC_DOCTOR_FAIL" -eq 0 ]
 }
@@ -765,7 +800,7 @@ ac_print() {
   fi
   printf '  %-24s %s\n' "module patches"  "${AC_PATCH_KEYS:-none -- every knob is keep}"
   est=$(mp_estimate "$MODULE_EVENTS" "$MODULE_EPOCHS")
-  [ -n "$est" ] && printf '  %-24s %s\n' "estimated training" "~${est} min per step per worker (fit on the 2026 module)"
+  [ -n "$est" ] && printf '  %-24s %s\n' "estimated training" "~$(mp_minutes_text "$est") per step per worker if the module is a 2026 tree (that is what the fit covers)"
 }
 
 # --- mutation -------------------------------------------------------------

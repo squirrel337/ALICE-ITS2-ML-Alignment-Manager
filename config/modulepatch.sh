@@ -12,12 +12,11 @@
 #  Every patch is gated on what the tree actually contains, discovered by
 #  reading it rather than assumed from its name, so one code path drives the
 #  2024, 2025 and 2026 module generations. A knob left at `keep` is not
-#  touched, and the four patchable files are restored from the archive
-#  before patching, so `keep` always means the archive's own value even in
-#  a worker directory an earlier run patched.
+#  touched; the driver unpacks the archive afresh into every worker on every
+#  run, so `keep` is always the archive's own value.
 #
 #  The patch primitives are the ones the 2026 tree's own run console uses
-#  (ALICE-ITS2-ML-Alignment-2026, config/runconf.sh, rc_patch_*), carried
+#  (alice-its2-ml-alignment-2026, config/runconf.sh, rc_patch_*), carried
 #  over with an mp_ prefix so both tools rewrite the same lines the same way.
 #  Only the primitives are carried over: YMLPParallel.h keeps being written
 #  by ac_gen_ymlpparallel, and FITMODEL/VERTEXFIT are never touched (the
@@ -38,12 +37,11 @@ MP_GEOMCACHE="geometry/its2_geom.root"
 MP_ALIGNFILE="ITSAlignment.root"
 MP_FPTOOL="tools/align_fingerprint.C"
 
-# Read by inspect. All eight exist in every supported generation; the probe
-# requires the extraction to succeed and treats any tar failure as an
-# unreadable archive.
+# Read by inspect. All eight exist in every supported generation and every
+# one is required: an archive lacking one is not a module tree this code
+# understands, and saying so beats reading an absent file as an absent
+# capability.
 MP_PROBE_FILES="$MP_PARALLEL $MP_DETCONST $MP_DATAHDR $MP_GEOMHDR $MP_GEOMSRC $MP_MLPSRC $MP_ALIGNSRC $MP_DRIVER"
-# The four a patch may rewrite; restored from the archive before every pass.
-MP_PATCH_FILES="$MP_DETCONST $MP_GEOMHDR $MP_MLPSRC $MP_DRIVER"
 
 # Same marker the 2026 console writes, so a tree composed by either tool is
 # cleaned up by the other instead of accumulating a second define.
@@ -52,6 +50,10 @@ MP_GEOM_MARK="// --- run console: geometry backend ---"
 # The learning methods YMultiLayerPerceptron.h declares. Which of them a
 # given tree actually implements is read from its Train() switch.
 MP_METHODS="kStochastic kBatch kBatchDetectorUnitUser kSteepestDescent kRibierePolak kFletcherReeves kBFGS kOffsetTuneByMean"
+
+# The methods that apply their update through MLP_BatchArr, which is where
+# DULEVEL pooling and the layer mask act. kStochastic bypasses both.
+MP_BATCH_METHODS="kBatch kBatchDetectorUnitUser kSteepestDescent"
 
 # Chips per layer, for the layer-selection summary.
 MP_LAYER_SENSORS="108 144 180 2688 3360 8232 9408"
@@ -89,22 +91,29 @@ mp_die() { echo "modulepatch: $*" >&2; return 1; }
 # The member list, read once per archive and reused: every question below
 # (top directory, which files exist, is the geometry cache there) is answered
 # from it, so an archive is decompressed once for the listing and once for
-# the extraction, never per file.
+# the extraction, never per file. tar's complaint, if any, is kept in
+# MP_LIST_ERR so a truncated download is reported as such.
 mp_archive_list() {   # archive -> member names, one per line
+  local errf rc
   if [ "${MP_LIST_FOR:-}" != "$1" ]; then
-    MP_LIST=$(tar -tzf "$1" 2>/dev/null) || { MP_LIST=""; MP_LIST_FOR=""; return 1; }
+    errf=$(mktemp "${TMPDIR:-/tmp}/modulepatch.XXXXXX") || return 1
+    MP_LIST=$(tar -tzf "$1" 2>"$errf"); rc=$?
+    MP_LIST_ERR=$(tail -n1 "$errf" 2>/dev/null)
+    rm -f "$errf"
+    if [ $rc -ne 0 ]; then MP_LIST=""; MP_LIST_FOR=""; return 1; fi
     MP_LIST_FOR="$1"
   fi
   printf '%s\n' "$MP_LIST"
 }
 
-# First path component of the first member, with any leading ./ dropped.
-# The driver unpacks the archive and enters MODULE_NAME/, so this must equal
-# MODULE_NAME; doctor checks it. Archives packed as `tar czf X.tgz ./X`
-# store members as ./X/..., which tar unpacks to X/ exactly like X/...; the
-# member names below are always taken from the listing, never composed.
+# The directory the module sits in: the one holding YMLPParallel.h, with any
+# leading ./ dropped. Taken from that member rather than from listing order,
+# so a stray file packed ahead of the directory does not confuse it. The
+# driver unpacks the archive and enters MODULE_NAME/, so this must equal
+# MODULE_NAME; doctor checks it. Empty when the archive has no such member
+# (packed flat, or from a tree without the header).
 mp_archive_top() {    # archive -> top directory name
-  mp_archive_list "$1" | sed -n '1{s|^\./||;s|/.*||;p;}'
+  mp_archive_list "$1" | sed -n 's|^\./||; s|^\([^/][^/]*\)/YMLPParallel\.h$|\1|p' | head -n1
 }
 
 # The member name for one path inside the tree, exactly as the archive
@@ -115,19 +124,22 @@ mp_archive_member() { # archive top relpath -> member name
 }
 
 # Extracts the probe files into DESTDIR and prints the tree root
-# (DESTDIR/<top>). One tar call naming exactly the members that are present,
-# so tar's exit status means what it says: non-zero is an unreadable archive.
+# (DESTDIR/<top>). One tar call naming exactly the members found in the
+# listing, so tar's exit status means what it says: non-zero is an
+# unreadable archive. Any of the eight missing is an error naming it.
 mp_probe_extract() {  # archive destdir -> tree root on stdout
-  local a="$1" d="$2" top f m members=""
+  local a="$1" d="$2" top f m
+  local -a members=()
+  MP_MISSING=""
+  mp_archive_list "$a" >/dev/null || { mp_die "cannot list $a: ${MP_LIST_ERR:-not a readable gzip tar archive}"; return 1; }
   top=$(mp_archive_top "$a")
-  [ -n "$top" ] || { mp_die "cannot list $a"; return 1; }
+  [ -n "$top" ] || { mp_die "$a has no <directory>/YMLPParallel.h member; pack the module as 'tar czf NAME.tgz NAME'"; return 1; }
   for f in $MP_PROBE_FILES; do
-    m=$(mp_archive_member "$a" "$top" "$f") && members="$members $m"
+    if m=$(mp_archive_member "$a" "$top" "$f"); then members+=("$m"); else MP_MISSING="$MP_MISSING $f"; fi
   done
-  [ -n "$members" ] || { mp_die "$a holds none of the module files (top directory $top)"; return 1; }
+  [ -z "$MP_MISSING" ] || { mp_die "$a lacks module files under $top/:$MP_MISSING"; return 1; }
   mkdir -p "$d" || return 1
-  # shellcheck disable=SC2086
-  tar -xzf "$a" -C "$d" $members || { mp_die "could not extract the module headers from $a"; return 1; }
+  tar -xzf "$a" -C "$d" "${members[@]}" || { mp_die "could not extract the module headers from $a"; return 1; }
   echo "$d/$top"
 }
 
@@ -135,29 +147,15 @@ mp_probe_extract() {  # archive destdir -> tree root on stdout
 # itself, the alignment the o2 backend would apply, and the module's own
 # fingerprint macro. Missing members are simply not extracted.
 mp_probe_extract_cache() { # archive destdir
-  local a="$1" d="$2" top f m members=""
-  top=$(mp_archive_top "$a") || return 1
-  for f in $MP_GEOMCACHE $MP_ALIGNFILE $MP_FPTOOL; do
-    m=$(mp_archive_member "$a" "$top" "$f") && members="$members $m"
-  done
-  [ -n "$members" ] || return 0
-  # shellcheck disable=SC2086
-  tar -xzf "$a" -C "$d" $members
-}
-
-# Puts the archive's own copy of every patchable file back into an unpacked
-# worker tree. PARENT is the directory the archive was unpacked in, so the
-# members land exactly where the unpack put them.
-mp_restore() {        # archive parentdir
-  local a="$1" parent="$2" top f m members=""
+  local a="$1" d="$2" top f m
+  local -a members=()
   top=$(mp_archive_top "$a")
-  [ -n "$top" ] || { mp_die "cannot list $a"; return 1; }
-  for f in $MP_PATCH_FILES; do
-    m=$(mp_archive_member "$a" "$top" "$f") && members="$members $m"
+  [ -n "$top" ] || return 1
+  for f in $MP_GEOMCACHE $MP_ALIGNFILE $MP_FPTOOL; do
+    m=$(mp_archive_member "$a" "$top" "$f") && members+=("$m")
   done
-  # shellcheck disable=SC2086
-  [ -n "$members" ] && { tar -xzf "$a" -C "$parent" $members || { mp_die "could not restore module files from $a"; return 1; }; }
-  return 0
+  [ ${#members[@]} -gt 0 ] || return 0
+  tar -xzf "$a" -C "$d" "${members[@]}"
 }
 
 # --- reading a tree ---------------------------------------------------------
@@ -222,7 +220,7 @@ mp_reset() {
   MP_MOD_PT_MIN="" MP_MOD_PT_MAX="" MP_MOD_CHI_IB="" MP_MOD_CHI_OB="" MP_MOD_CHI_IB_TRAIN="" MP_MOD_CHI_OB_TRAIN=""
   MP_MOD_TRACK_REJECT="" MP_MOD_IP_RANGE_R="" MP_MOD_IP_RANGE_Z="" MP_MOD_MIN_CLUSTER="" MP_MOD_VERTEX_DERIVATIVES=""
   MP_DU_PERSIST=0 MP_GENERATION=""
-  MP_APPLIED=""
+  MP_MISSING="" MP_APPLIED=""
 }
 
 # What this tree offers, discovered rather than assumed. Sets MP_* for the
@@ -276,8 +274,8 @@ mp_inspect() {        # treeroot
   MP_MOD_DULEVEL=$(mp_read_define "$t/$MP_DETCONST" DULEVEL)
   [ -n "$MP_MOD_DULEVEL" ] && MP_DETECTOR_UNIT=1
 
-  # Layer selection (2026). A tree without the define hard-codes the outer
-  # barrel in its batch path, which is what mask 0x78 spells out.
+  # Layer selection (2026). A tree without the define updates every layer
+  # its update list names -- all seven.
   MP_MOD_LAYER_MASK=$(mp_read_define "$t/$MP_DETCONST" ALIGN_LAYER_MASK)
   [ -n "$MP_MOD_LAYER_MASK" ] && MP_LAYER_SELECT=1
 
@@ -360,10 +358,16 @@ mp_dulevel_name() {
   esac
 }
 
+# Whether a method applies its update through the batch path, where DULEVEL
+# and the layer mask act.
+mp_is_batch_method() { # method
+  case " $MP_BATCH_METHODS " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
+
 # --- runtime estimate -------------------------------------------------------
 
 # Minutes for one training step of one worker, fitted on completed runs of
-# the 2026 module; other generations are in the same range. Informational.
+# the 2026 module. Informational, and only for that generation.
 MP_COST_FIXED="4.8"
 MP_COST_EVAL="0.00337"
 MP_COST_EPOCH="0.01431"
@@ -374,6 +378,13 @@ mp_estimate() {       # ndata nepoch -> minutes per step
             s = (e <= 0) ? 0.75 : 1.0;
             if (e < 0) e = 0;
             printf "%.0f", a + b*s*n + e*c*n }'
+}
+
+mp_minutes_text() {   # minutes -> "N min (H.H h)" or with days
+  awk -v m="$1" 'BEGIN{ if (m == "") exit
+    if (m >= 2880) printf "%d min (%.1f days)", m, m/1440
+    else if (m >= 90) printf "%d min (%.1f h)", m, m/60
+    else printf "%d min", m }'
 }
 
 # --- patch primitives -------------------------------------------------------
@@ -462,7 +473,9 @@ mp_patch_geom() {     # file backend(o2|cache)
   if [ "$want" = o2 ]; then
     grep -q '^#define YGEOM_USE_O2 1$' "$f" || { mp_die "could not select the O2 backend in $(basename "$f")"; return 1; }
   else
-    grep -q '^#define YGEOM_USE_O2' "$f" && { mp_die "could not select the cache backend in $(basename "$f")"; return 1; }
+    # A define the marker block does not own -- a hand edit such as the one
+    # the 2026 tools describe -- would override the cache selection.
+    grep -q '^#define YGEOM_USE_O2' "$f" && { mp_die "$(basename "$f") defines YGEOM_USE_O2 outside the run-console block; that archive is O2-only as packed -- use o2, or repack without the hand edit"; return 1; }
   fi
   return 0
 }
@@ -471,12 +484,17 @@ mp_patch_geom() {     # file backend(o2|cache)
 
 # Rewrites every knob that is not `keep` in an unpacked tree, gated on what
 # mp_inspect found there. Every change is recorded in MP_APPLIED for the
-# manifest. Returns non-zero if a requested knob is unsupported by this tree
-# or a patch did not take; the caller must not launch in that case.
+# manifest; a value equal to the archive's is noted as unchanged. Returns
+# non-zero if a requested knob is unsupported by this tree or a patch did
+# not take; the caller must not launch in that case.
 mp_apply() {          # treeroot
   local t="$1" bad=0 pair k d v mask old
   _mp_note() { MP_APPLIED="${MP_APPLIED}$1
 "; }
+  _mp_change() {    # file name old new [suffix]
+    if [ "$3" = "$4" ]; then _mp_note "$1  $2 $3 (unchanged)${5:-}"
+    else _mp_note "$1  $2 $3 -> $4${5:-}"; fi
+  }
 
   mp_inspect "$t"
   MP_APPLIED=""
@@ -490,7 +508,7 @@ mp_apply() {          # treeroot
     elif ! echo " $MP_METHODS_IMPL " | grep -q " $MODULE_LEARNING_METHOD "; then
       mp_die "MODULE_LEARNING_METHOD $MODULE_LEARNING_METHOD is not implemented by this module (its Train() has: ${MP_METHODS_IMPL:-nothing}); use keep or one of those"; bad=1
     else
-      mp_patch_driver "$t/$MP_DRIVER" "$MODULE_LEARNING_METHOD" && _mp_note "$MP_DRIVER  method $MP_MOD_METHOD -> $MODULE_LEARNING_METHOD" || bad=1
+      mp_patch_driver "$t/$MP_DRIVER" "$MODULE_LEARNING_METHOD" && _mp_change "$MP_DRIVER" method "$MP_MOD_METHOD" "$MODULE_LEARNING_METHOD" || bad=1
     fi
   fi
 
@@ -499,7 +517,7 @@ mp_apply() {          # treeroot
   # one configuration drive both generations.
   if [ "$MODULE_DULEVEL" != keep ]; then
     if [ "$MP_DETECTOR_UNIT" -eq 1 ]; then
-      mp_patch_define "$t/$MP_DETCONST" DULEVEL "$MODULE_DULEVEL" && _mp_note "$MP_DETCONST  DULEVEL $MP_MOD_DULEVEL -> $MODULE_DULEVEL ($(mp_dulevel_name "$MODULE_DULEVEL"))" || bad=1
+      mp_patch_define "$t/$MP_DETCONST" DULEVEL "$MODULE_DULEVEL" && _mp_change "$MP_DETCONST" DULEVEL "$MP_MOD_DULEVEL" "$MODULE_DULEVEL" " ($(mp_dulevel_name "$MODULE_DULEVEL"))" || bad=1
     elif [ "$MODULE_DULEVEL" = 5 ]; then
       _mp_note "DULEVEL 5 requested; this module has no DULEVEL and aligns per chip anyway (no change)"
     else
@@ -508,19 +526,20 @@ mp_apply() {          # treeroot
   fi
 
   # Layer selection: 2026 only. The module wants the mask, the configuration
-  # holds the list people read. 3,4,5,6 is the outer barrel an older tree
-  # hard-codes, accepted there as a no-op for the same reason.
+  # holds the list people read. An older tree updates every layer, so only
+  # the full set is a no-op there; anything narrower is refused rather than
+  # launched as an all-layer run.
   if [ "$MODULE_LAYERS" != keep ]; then
     mask=$(mp_layers_mask "$MODULE_LAYERS")
     if [ -z "$mask" ] || [ "$mask" -eq 0 ]; then
       mp_die "MODULE_LAYERS '$MODULE_LAYERS' is not a list of distinct layers 0..6"; bad=1
     elif [ "$MP_LAYER_SELECT" -eq 1 ]; then
       mp_patch_define "$t/$MP_DETCONST" ALIGN_LAYER_MASK "$(printf '0x%02X' "$mask")" \
-        && _mp_note "$MP_DETCONST  ALIGN_LAYER_MASK $MP_MOD_LAYER_MASK -> $(printf '0x%02X' "$mask") (layers $MODULE_LAYERS, $(mp_layers_preset "$mask"))" || bad=1
-    elif [ "$mask" -eq 120 ]; then
-      _mp_note "layers 3,4,5,6 requested; this module has no ALIGN_LAYER_MASK and hard-codes the outer barrel anyway (no change)"
+        && _mp_change "$MP_DETCONST" ALIGN_LAYER_MASK "$(printf '0x%02X' "$(( MP_MOD_LAYER_MASK ))")" "$(printf '0x%02X' "$mask")" " (layers $(mp_mask_layers "$mask"), $(mp_layers_preset "$mask"))" || bad=1
+    elif [ "$mask" -eq 127 ]; then
+      _mp_note "layers 0..6 requested; this module has no ALIGN_LAYER_MASK and updates every layer anyway (no change)"
     else
-      mp_die "MODULE_LAYERS is $MODULE_LAYERS, but this module has no ALIGN_LAYER_MASK -- it hard-codes the outer barrel; use keep or 3,4,5,6"; bad=1
+      mp_die "MODULE_LAYERS is $MODULE_LAYERS, but this module has no ALIGN_LAYER_MASK -- its update covers all seven layers; use keep"; bad=1
     fi
   fi
 
@@ -531,7 +550,7 @@ mp_apply() {          # treeroot
     [ "$v" = keep ] && continue
     if mp_has_define "$t/$MP_DETCONST" "$d"; then
       old=$(mp_read_define "$t/$MP_DETCONST" "$d")
-      mp_patch_define "$t/$MP_DETCONST" "$d" "$v" && _mp_note "$MP_DETCONST  $d $old -> $v" || bad=1
+      mp_patch_define "$t/$MP_DETCONST" "$d" "$v" && _mp_change "$MP_DETCONST" "$d" "$old" "$v" || bad=1
     else
       mp_die "$k is set, but this module has no #define $d; use keep"; bad=1
     fi
@@ -544,14 +563,14 @@ mp_apply() {          # treeroot
     [ "$v" = keep ] && continue
     old=$(mp_read_global "$t/$MP_MLPSRC" "$d")
     if [ -n "$old" ]; then
-      mp_patch_global "$t/$MP_MLPSRC" "$d" "$v" && _mp_note "$MP_MLPSRC  $d $old -> $v" || bad=1
+      mp_patch_global "$t/$MP_MLPSRC" "$d" "$v" && _mp_change "$MP_MLPSRC" "$d" "$old" "$v" || bad=1
     else
       mp_die "$k is set, but this module has no file-scope 'double $d' (no adaptive vertex in this tree?); use keep"; bad=1
     fi
   done
   if [ "$MODULE_MAX_BAD_TRACKS" != keep ]; then
     if [ -n "$MP_MOD_MAX_BAD_TRACKS" ]; then
-      mp_patch_badtracks "$t/$MP_MLPSRC" "$MODULE_MAX_BAD_TRACKS" && _mp_note "$MP_MLPSRC  Num_Of_Bad_Tracks gate $MP_MOD_MAX_BAD_TRACKS -> $MODULE_MAX_BAD_TRACKS" || bad=1
+      mp_patch_badtracks "$t/$MP_MLPSRC" "$MODULE_MAX_BAD_TRACKS" && _mp_change "$MP_MLPSRC" "Num_Of_Bad_Tracks gate" "$MP_MOD_MAX_BAD_TRACKS" "$MODULE_MAX_BAD_TRACKS" || bad=1
     else
       mp_die "MODULE_MAX_BAD_TRACKS is set, but this module has no Num_Of_Bad_Tracks gate; use keep"; bad=1
     fi
@@ -564,7 +583,7 @@ mp_apply() {          # treeroot
   case "$GEOM_BACKEND" in
     o2)
       if [ "$MP_CACHE_CAPABLE" -eq 1 ]; then
-        mp_patch_geom "$t/$MP_GEOMHDR" o2 && _mp_note "$MP_GEOMHDR  backend o2 (YGEOM_USE_O2 written; the tree ships as cache)" || bad=1
+        mp_patch_geom "$t/$MP_GEOMHDR" o2 && _mp_note "$MP_GEOMHDR  backend o2 (YGEOM_USE_O2 written; the tree ships as $MP_GEOM_SHIPPED)" || bad=1
       fi ;;
     cache)
       if [ "$MP_CACHE_CAPABLE" -eq 1 ]; then
@@ -575,7 +594,7 @@ mp_apply() {          # treeroot
     *) mp_die "GEOM_BACKEND must be o2 or cache, got '$GEOM_BACKEND'"; bad=1 ;;
   esac
 
-  unset -f _mp_note
+  unset -f _mp_note _mp_change
   return $bad
 }
 
@@ -589,7 +608,7 @@ mp_manifest() {       # file archive treeroot
     echo "tree        $3"
     echo "generation  ${MP_GENERATION:-?} (schema ${MP_SCHEMA:-?}, charge=$MP_HAS_CHARGE, detector-unit=$MP_DETECTOR_UNIT, layer-select=$MP_LAYER_SELECT, adaptive-vertex=$MP_ADAPTIVE_VERTEX, cache-capable=$MP_CACHE_CAPABLE, o2-required=$MP_O2_REQUIRED, du-persist=$MP_DU_PERSIST)"
     echo "methods     ${MP_METHODS_IMPL:-?} (implemented by this tree; driver macro ships ${MP_MOD_METHOD:-?})"
-    echo "job size    nDATA=$MODULE_EVENTS nEPOCH=$MODULE_EPOCHS nCORE=$MODULE_CORES jparallel=$MODULE_JPARALLEL (YMLPParallel.h regenerated)"
+    echo "job size    nDATA=${MODULE_EVENTS:-?} nEPOCH=${MODULE_EPOCHS:-?} nCORE=${MODULE_CORES:-?} jparallel=${MODULE_JPARALLEL:-?} (YMLPParallel.h regenerated)"
     if [ -n "$MP_APPLIED" ]; then
       echo "patched"
       printf '%s' "$MP_APPLIED" | sed 's/^/  /'
@@ -603,7 +622,7 @@ mp_manifest() {       # file archive treeroot
 # `alignctl.sh inspect` and the GUI read the same thing the driver gates on.
 mp_report() {         # (after mp_inspect)
   local v
-  for v in MP_VALID MP_GENERATION MP_SCHEMA MP_HAS_CHARGE MP_CACHE_CAPABLE MP_O2_REQUIRED MP_GEOM_SHIPPED \
+  for v in MP_VALID MP_MISSING MP_GENERATION MP_SCHEMA MP_HAS_CHARGE MP_CACHE_CAPABLE MP_O2_REQUIRED MP_GEOM_SHIPPED \
            MP_HAS_METHOD_LINE MP_MOD_METHOD MP_METHODS_IMPL MP_DETECTOR_UNIT MP_MOD_DULEVEL \
            MP_LAYER_SELECT MP_MOD_LAYER_MASK MP_ADAPTIVE_VERTEX MP_DU_PERSIST \
            MP_MOD_NDATA MP_MOD_NEPOCH MP_MOD_NTRACKMAX MP_MOD_DET_MAG MP_MOD_PT_MIN MP_MOD_PT_MAX \

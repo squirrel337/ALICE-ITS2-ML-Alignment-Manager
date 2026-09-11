@@ -56,6 +56,8 @@ say "data-prep in : ${AC_MASTER_DIR}"
 # stops the run here rather than after the data preparation.
 ac_resolve_schema || die "could not resolve the track schema"
 probe=$(mktemp -d "${TMPDIR:-/tmp}/alignprobe.XXXXXX") || die "cannot create a scratch directory"
+# Every refusal below exits through die; the scratch copy goes with it.
+trap 'rm -rf "$probe"' EXIT
 ac_probe "$AC_MODULE_TGZ" "$probe" || die "could not read the module headers out of $AC_MODULE_TGZ"
 proberoot=$AC_PROBE_ROOT
 archivetop=$(mp_archive_top "$AC_MODULE_TGZ")
@@ -65,10 +67,21 @@ archivetop=$(mp_archive_top "$AC_MODULE_TGZ")
   || die "the archive unpacks to '${archivetop}/' but MODULE_NAME is '${modulename}'; repack it as: tar czf ${modulename}.tgz ${modulename}"
 [ "$AC_TRACK_SCHEMA" = "$MP_SCHEMA" ] \
   || die "TRACK_SCHEMA=${TRACK_SCHEMA} resolves to ${AC_TRACK_SCHEMA}, but the module reads the ${MP_SCHEMA} input tree"
-if [ "$GEOM_BACKEND" = cache ] && ! mp_archive_member "$AC_MODULE_TGZ" "$archivetop" "$MP_GEOMCACHE" >/dev/null; then
-  die "GEOM_BACKEND is cache, but the archive holds no ${archivetop}/${MP_GEOMCACHE}; build it with the module's tools/export_geometry_cache.C and repack, or set GEOM_BACKEND=o2"
+if [ "$GEOM_BACKEND" = cache ]; then
+  [ "$MP_CACHE_CAPABLE" -eq 1 ] \
+    || die "GEOM_BACKEND is cache, but this module only has the O2 backend; use o2"
+  mp_archive_member "$AC_MODULE_TGZ" "$archivetop" "$MP_GEOMCACHE" >/dev/null \
+    || die "GEOM_BACKEND is cache, but the archive holds no ${archivetop}/${MP_GEOMCACHE}; build it with the module's tools/export_geometry_cache.C and repack, or set GEOM_BACKEND=o2"
 fi
 mp_apply "$proberoot" || die "the module knobs in the configuration do not apply to this archive (see above)"
+# A configured value against the archive's own on the other side of a
+# relation: an empty pT window, a training cut looser than the cost cut, a
+# learning rate of zero. doctor reports these; the run must not start on them.
+relation_errors=$(ac_relation_errors)
+if [ -n "$relation_errors" ]; then
+  echo "$relation_errors" >&2
+  die "the module knobs conflict with the archive's own values (see above)"
+fi
 say "module       : generation ${MP_GENERATION}, input schema ${MP_SCHEMA}, backend ${GEOM_BACKEND}"
 if [ -n "$MP_APPLIED" ]; then
   say "module knobs :"
@@ -77,6 +90,7 @@ else
   say "module knobs : none -- the archive trains as shipped"
 fi
 rm -rf "$probe"
+trap - EXIT
 
 # Push the settings that live inside ROOT macros before anything reads them.
 ac_gen_datasetconfig "$AC_MASTER_DIR/DataSetConfig.h" || die "could not write DataSetConfig.h"
@@ -103,21 +117,20 @@ say "unpacking the module into ${N_WORKERS} worker directories"
 for (( ns = 0; ns < N_WORKERS; ns++ )); do
   worker="${alignworker}/align_worker_${ns}"
   mkdir -p "$worker" || die "could not create $worker"
-  if [ ! -d "$worker/$modulename" ] || [ "$AC_MODULE_TGZ" -nt "$worker/$modulename" ]; then
-    rm -rf "$worker/$modulename"
-    cp "$AC_MODULE_TGZ" "$worker/${modulename}.tgz" || die "could not copy the module archive"
-    ( cd "$worker" && tar -zxf "${modulename}.tgz" ) || die "could not unpack the module in $worker"
-  fi
+  # A fresh copy every run: the previous run's logs and outputs go, and a knob
+  # at keep is the archive's own value even after a run that patched it. (An
+  # earlier "only if the archive is newer" shortcut never fired, because the
+  # unpacked directory carries the archive's older timestamp.)
+  rm -rf "$worker/$modulename"
+  cp "$AC_MODULE_TGZ" "$worker/${modulename}.tgz" || die "could not copy the module archive"
+  ( cd "$worker" && tar -zxf "${modulename}.tgz" ) || die "could not unpack the module in $worker"
   # The module's job size is a set of #defines; overwriting the header in the
   # unpacked copy is the only way to set it without rebuilding the archive.
   ac_gen_ymlpparallel "$worker/$modulename/YMLPParallel.h" \
     || die "could not write YMLPParallel.h in $worker"
-  # The other knobs are patched into the unpacked copy the same way. The
-  # archive's own copy of every patchable file goes back first, so a knob at
-  # keep is the archive's value even in a worker an earlier run patched, and
-  # what was done is recorded beside the worker's copy of the archive.
-  mp_restore "$AC_MODULE_TGZ" "$worker" || die "could not restore the module files in $worker"
-  mp_apply "$worker/$modulename"        || die "could not patch the module in $worker"
+  # The other knobs are patched into the unpacked copy the same way, and what
+  # was done is recorded beside the worker's copy of the archive.
+  mp_apply "$worker/$modulename" || die "could not patch the module in $worker"
   mp_manifest "$worker/module_patch_manifest.txt" "$AC_MODULE_TGZ" "$worker/$modulename"
 done
 say "each worker has nDATA=${MODULE_EVENTS} nEPOCH=${MODULE_EPOCHS} nCORE=${MODULE_CORES}"

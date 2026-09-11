@@ -516,7 +516,7 @@ pre.sh u { color: var(--accent); text-decoration: none; }
     <p class="rail-title">Contents</p>
     <ol>
       <li><a href="#orientation"><span class="num">00</span>What the manager is</a></li>
-      <li><a href="#repos"><span class="num">01</span>Three repositories</a></li>
+      <li><a href="#repos"><span class="num">01</span>Four repositories</a></li>
       <li><a href="#loop"><span class="num">02</span>One batch, end to end</a></li>
       <li><a href="#dirs"><span class="num">03</span>Working directories</a></li>
       <li><a href="#config"><span class="num">04</span>Configuration</a></li>
@@ -567,7 +567,7 @@ pre.sh u { color: var(--accent); text-decoration: none; }
       This document covers the orchestration layer only. For what happens <em>inside</em> one
       worker &mdash; the cost function, the vertex constraint, how network weights become six
       rigid-body parameters per sensor &mdash; see <code>docs/workflow.html</code> in
-      ALICE-ITS2-ML-Alignment-2024 and ALICE-ITS2-ML-Alignment-2025, the two source trees that
+      ALICE-ITS2-ML-Alignment-2024, ALICE-ITS2-ML-Alignment-2025 and alice-its2-ml-alignment-2026, the three source trees that
       are packed into that tarball.
     </p>
   </div>
@@ -575,10 +575,10 @@ pre.sh u { color: var(--accent); text-decoration: none; }
 
 <!-- ==================== 01 ==================== -->
 <section id="repos">
-  <h2><span class="stage">Section 01</span>Three repositories</h2>
+  <h2><span class="stage">Section 01</span>Four repositories</h2>
 
   <p>
-    The project is split across three repositories with a one-way dependency: the manager consumes
+    The project is split across four repositories &mdash; one manager, three module generations &mdash; with a one-way dependency: the manager consumes
     the source trees, never the reverse.
   </p>
 
@@ -613,7 +613,7 @@ pre.sh u { color: var(--accent); text-decoration: none; }
   </div>
 
   <p>
-    Which of the two source trees is in play is decided by one string in the driver, and nothing
+    Which of the source trees is in play is decided by one string in the driver, and nothing
     else in the manager depends on that choice:
   </p>
 
@@ -929,11 +929,15 @@ resultdir=<b>"${homedir}/RESULT"</b>        resultcontainer=<b>"${resultdir}/${T
   <p>
     Every <code>MODULE_*</code> knob defaults to <code>keep</code>, which leaves the archive's own
     value untouched, so a configuration that sets none of them runs a 2024 or 2025 archive exactly
-    as before this layer existed. What a given archive has is discovered by reading it, not assumed
+    as before this layer existed. (The job-size keys <code>MODULE_EVENTS</code>, <code>MODULE_EPOCHS</code>,
+    <code>MODULE_JPARALLEL</code> and <code>MODULE_CORES</code> are not knobs of this kind: they were
+    always written into every worker.) What a given archive has is discovered by reading it, not assumed
     from its name: <code>alignctl.sh inspect</code> prints the report, <code>doctor</code> checks
     every knob that is set against it, and the driver checks again before unpacking. A knob the
-    module lacks is refused; <code>MODULE_DULEVEL=5</code> and <code>MODULE_LAYERS=3,4,5,6</code> are
-    accepted on older trees as what they do anyway. Learning methods are checked against the
+    module lacks is refused; <code>MODULE_DULEVEL=5</code> (per chip) and
+    <code>MODULE_LAYERS=0,1,2,3,4,5,6</code> (every layer) are accepted on older trees as what they do
+    anyway. Both knobs act in the batch update, which <code>kBatch</code> and
+    <code>kSteepestDescent</code> go through and <code>kStochastic</code> does not. Learning methods are checked against the
     module's <code>Train()</code> switch &mdash; every generation declares eight and implements
     three or four, and an unimplemented one would train nothing while looking busy.
   </p>
@@ -945,7 +949,7 @@ resultdir=<b>"${homedir}/RESULT"</b>        resultcontainer=<b>"${resultdir}/${T
       <tr><td class="mono">TRACK_SCHEMA</td><td>2024</td><td>2025</td><td>2025 (<code>auto</code> reads it from the archive)</td></tr>
       <tr><td class="mono">MODULE_LEARNING_METHOD</td><td>kStochastic, kBatch, kBatchDetectorUnitUser, kSteepestDescent</td><td>same</td><td>kStochastic, kBatch, kSteepestDescent</td></tr>
       <tr><td class="mono">MODULE_DULEVEL</td><td>&mdash; (per chip; 5 accepted)</td><td>&mdash;</td><td>-1..5</td></tr>
-      <tr><td class="mono">MODULE_LAYERS</td><td>&mdash; (outer barrel; 3,4,5,6 accepted)</td><td>&mdash;</td><td>any subset of 0..6</td></tr>
+      <tr><td class="mono">MODULE_LAYERS</td><td>&mdash; (all seven layers; 0,1,2,3,4,5,6 accepted)</td><td>&mdash;</td><td>any subset of 0..6</td></tr>
       <tr><td class="mono">GEOM_BACKEND</td><td>o2 only</td><td>o2 only</td><td>o2 or cache</td></tr>
       <tr><td class="mono">MODULE_QUALITY_*, MODULE_MAX_BAD_TRACKS,<br>MODULE_VERTEX_DERIVATIVES</td><td>&mdash;</td><td>yes</td><td>yes</td></tr>
       <tr><td class="mono">eta and cut windows</td><td>yes</td><td>yes</td><td>yes</td></tr>
@@ -982,7 +986,7 @@ resultdir=<b>"${homedir}/RESULT"</b>        resultcontainer=<b>"${resultdir}/${T
   <div class="note caveat">
     <span class="tag">Not a compile error</span>
     <p>
-      Both generations declare <code>ClassDef(TrackData, 1)</code> despite the differing layout, so
+      All three generations declare <code>ClassDef(TrackData, 1)</code> despite the differing layout, so
       a tree written without <code>charge</code> and read by a module expecting it leaves the field
       uninitialised rather than failing. That is why <code>doctor</code> does not take the setting
       on trust: it extracts <code>Ymlp/inc/DataInputStructure.h</code> from the selected module
@@ -1020,8 +1024,8 @@ resultdir=<b>"${homedir}/RESULT"</b>        resultcontainer=<b>"${resultdir}/${T
       <tr><td class="mono">MODULE_CORES</td><td class="val">1</td><td>Cores per worker (nCORE)</td></tr>
       <tr><td class="mono">GEOM_BACKEND</td><td class="val">o2</td><td>o2 or cache; cache only on a module that carries it, with the cache file in the archive</td></tr>
       <tr><td class="mono">MODULE_LEARNING_METHOD</td><td class="val">keep</td><td>keep, or a method the module implements (inspect lists them)</td></tr>
-      <tr><td class="mono">MODULE_DULEVEL</td><td class="val">keep</td><td>keep or -1..5, the detector unit one set of six parameters is pooled over (2026; kBatch only)</td></tr>
-      <tr><td class="mono">MODULE_LAYERS</td><td class="val">keep</td><td>keep or a comma list of 0..6 the batch update may move (2026; kBatch only)</td></tr>
+      <tr><td class="mono">MODULE_DULEVEL</td><td class="val">keep</td><td>keep or -1..5, the detector unit one set of six parameters is pooled over (2026; acts in the batch update: kBatch, kSteepestDescent)</td></tr>
+      <tr><td class="mono">MODULE_LAYERS</td><td class="val">keep</td><td>keep or a comma list of 0..6 the batch update may move (2026; kBatch, kSteepestDescent; older trees update all seven)</td></tr>
     </tbody>
   </table>
   </div>
@@ -1109,7 +1113,7 @@ resultdir=<b>"${homedir}/RESULT"</b>        resultcontainer=<b>"${resultdir}/${T
     symlinks the first few into <code>MasterData/</code>, and <code>hadd</code>s them into one file.
   </p>
 
-<pre class="sh"><i>runAll_alignment.sh:104 → RUN/MasterDataScript/DataRandomMerge.C</i>
+<pre class="sh"><i>runAll_alignment.sh, stage 1 → RUN/MasterDataScript/DataRandomMerge.C</i>
 root -l -b -q DataRandomMerge.C"(<b>$bcnt</b>,$DATA_MERGE_MAX_FILES)"
 
   random(seed=$bcnt, maxSelection=<b>kFilesPerBatch</b>)   <i># from DataSetConfig.h</i>
@@ -1314,13 +1318,13 @@ sleep 15s                                             <i># stagger, not a barrie
       unpacked copy after the module is extracted and before ROOT reads it, which is why they are
       configuration keys (<code>MODULE_EVENTS</code>, <code>MODULE_EPOCHS</code>, &hellip;) rather
       than a reason to repack the archive. The other module knobs are applied at the same point:
-      the archive's own copy of the four patchable files is put back first
-      (<code>mp_restore</code>), so a knob at <code>keep</code> is the archive's value even in a
-      worker directory an earlier run patched; then every knob that is set is rewritten in place
-      (<code>mp_apply</code>), and <code>module_patch_manifest.txt</code> beside the worker's copy of
-      the archive records what was done. Before any of this, the same patches are tried on a
-      scratch copy of the archive's headers, so a knob this module does not have stops the run
-      before the data preparation. The archive itself is never modified.
+      every run unpacks the archive afresh into each worker directory, so a knob at
+      <code>keep</code> is the archive's own value even after a run that patched it; then every
+      knob that is set is rewritten in place (<code>mp_apply</code>), and
+      <code>module_patch_manifest.txt</code> beside the worker's copy of the archive records what
+      was done. Before any of this, the same patches are tried on a scratch copy of the archive's
+      headers, so a knob this module does not have stops the run before the data preparation.
+      The archive itself is never modified.
     </p>
   </div>
 

@@ -18,7 +18,7 @@ set -u
 _here=$(cd "$(dirname "$0")" && pwd)
 . "$_here/alignconf.sh"
 
-usage() { sed -n '3,18p' "$0" | sed 's/^#[ ]\{0,2\}//'; }
+usage() { sed -n '3,15p' "$0" | sed 's/^#[ ]\{0,2\}//'; }
 
 cmd=${1:-show}
 [ $# -gt 0 ] && shift

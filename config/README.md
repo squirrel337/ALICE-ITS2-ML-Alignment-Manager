@@ -48,8 +48,9 @@ Where there is no display, `alignctl.sh set` does the same job.
 
 ## How a setting reaches the code
 
-Three of the settings do not live in shell variables, so they are pushed out
-by generating the files that hold them:
+Four groups of settings do not live in shell variables, so they are pushed
+out by generating the file that holds them, or by rewriting it in place in
+the worker's copy:
 
 | Setting | Lands in | Written when |
 |---|---|---|
@@ -80,17 +81,20 @@ or 2025 archive exactly as before.
 What a given archive has is discovered by reading it, not assumed from its
 name: `alignctl.sh inspect` prints the report, `doctor` checks every knob
 that is set against it, and the driver checks again before unpacking. A knob
-the module lacks is refused; `MODULE_DULEVEL=5` and `MODULE_LAYERS=3,4,5,6`
-are accepted on older trees as what they do anyway. Learning methods are
-checked against the module's `Train()` switch: every generation declares
-eight, implements three or four, and an unimplemented one would train nothing.
+the module lacks is refused; `MODULE_DULEVEL=5` (per chip) and
+`MODULE_LAYERS=0,1,2,3,4,5,6` (every layer) are accepted on older trees as
+what they do anyway. Learning methods are checked against the module's
+`Train()` switch: every generation declares eight, implements three or four,
+and an unimplemented one would train nothing. `MODULE_DULEVEL` and
+`MODULE_LAYERS` act in the batch update, which `kBatch` and
+`kSteepestDescent` go through and `kStochastic` does not.
 
 | Knob | 2024 | 2025 | 2026 |
 |---|---|---|---|
 | input tree (`TRACK_SCHEMA`) | 2024 | 2025 | 2025 (`auto` reads it from the archive) |
 | `MODULE_LEARNING_METHOD` | kStochastic, kBatch, kBatchDetectorUnitUser, kSteepestDescent | same | kStochastic, kBatch, kSteepestDescent |
 | `MODULE_DULEVEL` | — (per chip; 5 accepted) | — | -1..5 |
-| `MODULE_LAYERS` | — (outer barrel; 3,4,5,6 accepted) | — | any subset of 0..6 |
+| `MODULE_LAYERS` | — (all seven layers; 0,1,2,3,4,5,6 accepted) | — | any subset of 0..6 |
 | `GEOM_BACKEND` | o2 only | o2 only | o2 or cache |
 | adaptive vertex (`MODULE_QUALITY_*`, `MODULE_MAX_BAD_TRACKS`, `MODULE_VERTEX_DERIVATIVES`) | — | yes | yes |
 | eta and cut windows | yes | yes | yes |
@@ -138,5 +142,8 @@ archive instead of asking.
    `ac_validate`; if it must exist on disk, add it to `ac_doctor`. A knob
    that only some module generations have is gated in `mp_apply`
    (`modulepatch.sh`) on what `mp_inspect` found.
-4. Add a widget in `RUN/ConfigUI/ConfigUI.C` — one line in `LoadAll` to read
-   it and one in `OnSave` to write it.
+4. Add a widget in `RUN/ConfigUI/ConfigUI.C`: a numeric module knob is one
+   entry in the `kKnobs` table (its key, label and the `MP_MOD_*` field
+   `mp_report` prints for it); anything else is one line in `LoadAll` to
+   read it and one in `OnSave` to write it. A knob only some generations
+   have is also gated in `ApplyCapabilities`.

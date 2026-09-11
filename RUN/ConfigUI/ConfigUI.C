@@ -152,6 +152,7 @@ private:
    static void    SelectByName(TGComboBox *c, const TString &name);
    static TString SelectedName(TGComboBox *c);
    static TString ValueOf(TGComboBox *c);   // the first word of the selected entry
+   static void    Enable(TGCheckButton *b, Bool_t on);
 
    TString Cap(const char *key) const;
    Bool_t  CapIs(const char *key, const char *value) const;
@@ -311,6 +312,14 @@ TString AlignConfigUI::ValueOf(TGComboBox *c)
    Ssiz_t sp = v.Index(" ");
    if (sp > 0) v.Remove(sp);
    return v;
+}
+
+// TGButton::SetEnabled(kTRUE) is SetState(kButtonUp), which on a ticked box
+// clears the tick. Only change the enabled state when it actually differs,
+// and always enable before ticking.
+void AlignConfigUI::Enable(TGCheckButton *b, Bool_t on)
+{
+   if (b->IsEnabled() != on) b->SetEnabled(on);
 }
 
 TString AlignConfigUI::Cap(const char *key) const
@@ -639,12 +648,13 @@ void AlignConfigUI::LoadAll()
    }
    if (selected >= 0) fModuleName->Select(selected, kFALSE);
 
-   // "auto" is id 0; a year is its own id. Anything else -- an error message
-   // from a broken file, say -- is left unselected and shown in the log.
+   // "auto" is id 0; a year is its own id. Anything else -- a hand-edited
+   // value, or an error message from a broken file -- is left unselected
+   // and shown in the log.
    TString schema = Get("TRACK_SCHEMA");
-   if (schema == "auto")                          fTrackSchema->Select(0, kFALSE);
-   else if (schema.IsDigit() && schema.Atoi() > 0) fTrackSchema->Select(schema.Atoi(), kFALSE);
-   else Log(TString::Format("TRACK_SCHEMA is '%s' -- not a value this window knows", schema.Data()));
+   if (schema == "auto")                                                       fTrackSchema->Select(0, kFALSE);
+   else if (schema == "2024" || schema == "2025" || schema == "2026")          fTrackSchema->Select(schema.Atoi(), kFALSE);
+   else Log(TString::Format("TRACK_SCHEMA is '%s' -- not a value this window knows; pick one before saving", schema.Data()));
 
    fEvents->SetIntNumber(Get("MODULE_EVENTS").Atoll());
    fEpochs->SetIntNumber(Get("MODULE_EPOCHS").Atoll());
@@ -665,11 +675,14 @@ void AlignConfigUI::LoadAll()
       }
    }
    {
+      // Enable first, tick second: enabling a ticked box would untick it.
       TString layers = Get("MODULE_LAYERS");
       Bool_t keep = (layers == "keep");
+      Enable(fLayersKeep, kTRUE);
+      for (Int_t i = 0; i < 7; ++i) Enable(fLayer[i], kTRUE);
       fLayersKeep->SetState(keep ? kButtonDown : kButtonUp, kFALSE);
       SetLayerChecks(keep ? TString("") : layers);
-      for (Int_t i = 0; i < 7; ++i) fLayer[i]->SetEnabled(!keep);
+      if (keep) for (Int_t i = 0; i < 7; ++i) Enable(fLayer[i], kFALSE);
    }
 
    for (Int_t i = 0; i < kNKnobs; ++i) {
@@ -721,14 +734,17 @@ void AlignConfigUI::Inspect()
       TString line = ((TObjString *)lines->At(i))->GetString();
       Ssiz_t eq = line.Index("=");
       if (eq <= 0 || !line.BeginsWith("MP_")) continue;
-      fCapMap[std::string(line(0, eq).Data())] = std::string(line(eq + 1, line.Length()).Data());
+      // TSubString::Data() is not NUL-terminated at the substring's end;
+      // go through a TString to get the key and the value on their own.
+      TString key(line(0, eq));
+      TString val(line(eq + 1, line.Length() - eq - 1));
+      fCapMap[std::string(key.Data())] = std::string(val.Data());
    }
    delete lines;
 
    if (!CapIs("MP_VALID", "1")) {
-      TString err = Cap("MP_ERROR");
-      fCap[0]->SetText(TString::Format("could not read %s.tgz: %s", name.Data(),
-                                       err.IsNull() ? "not an alignment module tree" : err.Data()));
+      LogCommand("inspect", out);
+      fCap[0]->SetText(TString::Format("could not read %s.tgz -- see the log", name.Data()));
       fCap[1]->SetText("capabilities unknown -- every knob left enabled; the driver checks again before launching");
       for (Int_t i = 2; i < 6; ++i) fCap[i]->SetText(" ");
       fCapMap.clear();
@@ -745,7 +761,7 @@ void AlignConfigUI::Inspect()
       Cap("MP_METHODS_IMPL").Data(), Cap("MP_MOD_METHOD").Data()));
    fCap[2]->SetText(TString::Format("detector unit: %s   layer selection: %s   adaptive vertex: %s",
       CapIs("MP_DETECTOR_UNIT", "1") ? TString::Format("yes (DULEVEL %s)", Cap("MP_MOD_DULEVEL").Data()).Data() : "no (per chip)",
-      CapIs("MP_LAYER_SELECT", "1") ? TString::Format("yes (mask %s)", Cap("MP_MOD_LAYER_MASK").Data()).Data() : "no (outer barrel)",
+      CapIs("MP_LAYER_SELECT", "1") ? TString::Format("yes (mask %s)", Cap("MP_MOD_LAYER_MASK").Data()).Data() : "no (all layers)",
       CapIs("MP_ADAPTIVE_VERTEX", "1") ? "yes" : "no"));
    if (CapIs("MP_CACHE_CAPABLE", "1"))
       fCap[3]->SetText(TString::Format("geometry: o2 or cache (ships as %s); cache file in the archive: %s",
@@ -779,12 +795,13 @@ void AlignConfigUI::ApplyCapabilities()
 
    fLayersOn = layers;
    if (!layers) {
+      Enable(fLayersKeep, kTRUE);
       fLayersKeep->SetState(kButtonDown, kFALSE);
-      for (Int_t i = 0; i < 7; ++i) fLayer[i]->SetEnabled(kFALSE);
+      for (Int_t i = 0; i < 7; ++i) Enable(fLayer[i], kFALSE);
    }
-   fLayersKeep->SetEnabled(layers);
+   Enable(fLayersKeep, layers);
    if (layers && !fLayersKeep->IsOn())
-      for (Int_t i = 0; i < 7; ++i) fLayer[i]->SetEnabled(kTRUE);
+      for (Int_t i = 0; i < 7; ++i) Enable(fLayer[i], kTRUE);
 
    for (Int_t i = 0; i < kNKnobs; ++i) {
       TString key = kKnobs[i].key;
@@ -860,7 +877,7 @@ void AlignConfigUI::UpdateLayerInfo()
    if (fLayersKeep->IsOn() || !fLayersOn) {
       TString mask = fCapKnown ? Cap("MP_MOD_LAYER_MASK") : TString("");
       if (fCapKnown && !CapIs("MP_LAYER_SELECT", "1"))
-         fLayerInfo->SetText("this module has no layer selection: its batch path moves the outer barrel (3,4,5,6) only");
+         fLayerInfo->SetText("this module has no layer selection: its update covers all seven layers");
       else if (!mask.IsNull())
          fLayerInfo->SetText(TString::Format("keep: the archive's own ALIGN_LAYER_MASK %s", mask.Data()));
       else
@@ -874,7 +891,7 @@ void AlignConfigUI::UpdateLayerInfo()
       fLayerInfo->SetText("no layer ticked -- tick at least one, or keep");
       return;
    }
-   fLayerInfo->SetText(TString::Format("%d of 24120 chips aligned, ALIGN_LAYER_MASK 0x%02X (effective under kBatch only)",
+   fLayerInfo->SetText(TString::Format("%d of 24120 chips aligned, ALIGN_LAYER_MASK 0x%02X (batch update: kBatch, kSteepestDescent; kStochastic ignores it)",
                                        chips, mask));
 }
 
@@ -980,7 +997,7 @@ void AlignConfigUI::OnModuleSelected() { Inspect(); }
 void AlignConfigUI::OnLayersKeep()
 {
    Bool_t keep = fLayersKeep->IsOn();
-   for (Int_t i = 0; i < 7; ++i) fLayer[i]->SetEnabled(!keep);
+   for (Int_t i = 0; i < 7; ++i) Enable(fLayer[i], !keep);
    UpdateLayerInfo();
    fModuleTab->Layout();
 }
