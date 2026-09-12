@@ -124,6 +124,11 @@ for (( ns = 0; ns < N_WORKERS; ns++ )); do
   rm -rf "$worker/$modulename"
   cp "$AC_MODULE_TGZ" "$worker/${modulename}.tgz" || die "could not copy the module archive"
   ( cd "$worker" && tar -zxf "${modulename}.tgz" ) || die "could not unpack the module in $worker"
+  # The module repositories track their launch scripts without the execute
+  # bit, so an archive packed from a fresh clone cannot be launched as is.
+  for f in process_all_master.sh process_all_train.sh process.sh; do
+    [ -f "$worker/$modulename/$f" ] && chmod +x "$worker/$modulename/$f"
+  done
   # The module's job size is a set of #defines; overwriting the header in the
   # unpacked copy is the only way to set it without rebuilding the archive.
   ac_gen_ymlpparallel "$worker/$modulename/YMLPParallel.h" \

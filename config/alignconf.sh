@@ -547,6 +547,20 @@ _ac_doctor_module() { # treeroot scratchdir
     _ac_bad "archive unpacks to '$top/' but MODULE_NAME is '$MODULE_NAME' -- the driver enters MODULE_NAME/ after unpacking; repack it as 'tar czf $MODULE_NAME.tgz $MODULE_NAME'"
   fi
   _ac_ok "generation $MP_GENERATION: input schema $MP_SCHEMA, detector-unit=$MP_DETECTOR_UNIT, layer-select=$MP_LAYER_SELECT, adaptive-vertex=$MP_ADAPTIVE_VERTEX, cache-capable=$MP_CACHE_CAPABLE"
+  # The launch chain is process_all_master.sh -> process_all_train.sh ->
+  # process.sh. The repositories track them without the execute bit; the
+  # driver sets it after unpacking, so this is information, not a failure.
+  local noexec=""
+  for f in process_all_master.sh process_all_train.sh process.sh; do
+    if ! tar -tzvf "$AC_MODULE_TGZ" 2>/dev/null | grep -E "[[:space:]](\./)?$(printf '%s' "$top" | sed 's|[.[\*^$/+?(){}|]|\\&|g')/$f\$" | grep -q '^-..x'; then
+      noexec="$noexec $f"
+    fi
+  done
+  if [ -n "$noexec" ]; then
+    _ac_ok "launch scripts not executable in the archive:$noexec -- the driver sets the bit after unpacking"
+  else
+    _ac_ok "launch scripts executable in the archive"
+  fi
   _ac_ok "learning methods this tree implements: ${MP_METHODS_IMPL:-none found}; its driver macro ships ${MP_MOD_METHOD:-?}"
 
   # The module and the split files must agree about the track schema. The
