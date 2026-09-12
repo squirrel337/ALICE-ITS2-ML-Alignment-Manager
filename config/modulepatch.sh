@@ -144,18 +144,40 @@ mp_probe_extract() {  # archive destdir -> tree root on stdout
 }
 
 # The cache-mode files, wanted only by doctor's staleness check: the cache
-# itself, the alignment the o2 backend would apply, and the module's own
-# fingerprint macro. Missing members are simply not extracted.
+# itself, the alignment the o2 backend would apply, and the module's tools/
+# directory (the fingerprint macro, its header, and the dictionary builder
+# it needs when O2 is not there). Missing members are simply not extracted.
 mp_probe_extract_cache() { # archive destdir
   local a="$1" d="$2" top f m
   local -a members=()
   top=$(mp_archive_top "$a")
   [ -n "$top" ] || return 1
-  for f in $MP_GEOMCACHE $MP_ALIGNFILE $MP_FPTOOL; do
+  for f in $MP_GEOMCACHE $MP_ALIGNFILE; do
     m=$(mp_archive_member "$a" "$top" "$f") && members+=("$m")
   done
+  while IFS= read -r m; do
+    [ -n "$m" ] && members+=("$m")
+  done <<EOF
+$(mp_archive_list "$a" | grep -E "^(\./)?$(printf '%s' "$top" | sed 's|[.[\*^$/+?(){}|]|\\&|g')/tools/[^/]+\.(C|h)$")
+EOF
   [ ${#members[@]} -gt 0 ] || return 0
   tar -xzf "$a" -C "$d" "${members[@]}"
+}
+
+# The fingerprint of an alignment file, through the module's own macro, run
+# from the tree root the way the macro expects. Without O2 the AlignParam
+# class has no dictionary; the module's make_alignlib.C builds one, so that
+# is tried once when the first attempt comes back unreadable. Prints the
+# fingerprint, or "unreadable".
+mp_align_fingerprint() { # treeroot -> fingerprint
+  local t="$1" fp
+  [ -f "$t/$MP_FPTOOL" ] && [ -f "$t/$MP_ALIGNFILE" ] || { echo unreadable; return 0; }
+  fp=$(cd "$t" && root -l -b -q "$MP_FPTOOL(\"$MP_ALIGNFILE\")" 2>/dev/null | sed -n 's/^ALIGN_FP //p')
+  if [ "${fp:-unreadable}" = unreadable ] && [ -f "$t/tools/make_alignlib.C" ]; then
+    (cd "$t" && root -l -b -q "tools/make_alignlib.C(\"$MP_ALIGNFILE\",\"tools/AlignLib\")" >/dev/null 2>&1)
+    fp=$(cd "$t" && root -l -b -q "$MP_FPTOOL(\"$MP_ALIGNFILE\")" 2>/dev/null | sed -n 's/^ALIGN_FP //p')
+  fi
+  echo "${fp:-unreadable}"
 }
 
 # --- reading a tree ---------------------------------------------------------

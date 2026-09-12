@@ -595,8 +595,7 @@ _ac_doctor_module() { # treeroot scratchdir
           mp_probe_extract_cache "$AC_MODULE_TGZ" "$probe" 2>/dev/null
           local cfp="" ffp=""
           cfp=$(root -l -b -q -e "auto f=TFile::Open(\"$root/$MP_GEOMCACHE\"); auto o=f?(TNamed*)f->Get(\"alignfingerprint\"):0; printf(\"AC_FP %s\\n\", f?(o?o->GetTitle():\"none\"):\"unreadable\")" 2>/dev/null | sed -n 's/^AC_FP //p')
-          [ -f "$root/$MP_FPTOOL" ] && [ -f "$root/$MP_ALIGNFILE" ] && \
-            ffp=$(root -l -b -q "$root/$MP_FPTOOL(\"$root/$MP_ALIGNFILE\")" 2>/dev/null | sed -n 's/^ALIGN_FP //p')
+          ffp=$(mp_align_fingerprint "$root")
           if [ -z "$cfp" ] || [ "$cfp" = unreadable ]; then
             _ac_warn "root could not open the archive's $MP_GEOMCACHE; cache staleness unchecked"
           elif [ "$cfp" = none ]; then

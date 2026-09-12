@@ -163,6 +163,7 @@ RUN/      MasterDataScript/  data preparation macros
           ConfigUI/          the configuration window
 config/   the configuration and its tooling
 docs/     workflow.html
+tests/    checks of the tooling and the window that run without O2 (see tests/README.md)
 ```
 
 `runAll_alignment.sh` is the configured driver.
